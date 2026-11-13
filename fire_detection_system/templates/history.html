@@ -1,0 +1,31 @@
+{% extends "index.html" %}
+{% block content %}
+<h1>Detection History</h1>
+<form method="GET" class="filter-bar">
+  <input type="text" name="q" value="{{ q }}" placeholder="Search incidents..." />
+  <select name="type">
+    <option value="All" {% if det_filter == 'All' %}selected{% endif %}>All Types</option>
+    <option value="Fire" {% if det_filter == 'Fire' %}selected{% endif %}>Fire</option>
+    <option value="Smoke" {% if det_filter == 'Smoke' %}selected{% endif %}>Smoke</option>
+  </select>
+  <button type="submit" class="btn-primary">Filter</button>
+  <a href="{{ url_for('export_csv') }}" class="btn-secondary">Download CSV</a>
+</form>
+<table>
+  <thead>
+    <tr><th>ID</th><th>Date &amp; Time</th><th>Type</th><th>Confidence</th><th>Source</th><th>Status</th></tr>
+  </thead>
+  <tbody>
+    {% for item in incidents %}
+    <tr>
+      <td>{{ item.incident_code }}</td>
+      <td>{{ item.timestamp }}</td>
+      <td>{{ item.detection_type }}</td>
+      <td>{{ item.confidence }}%</td>
+      <td>{{ item.source }}</td>
+      <td>{{ item.status }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

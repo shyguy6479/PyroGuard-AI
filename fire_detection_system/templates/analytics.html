@@ -1,0 +1,9 @@
+{% extends "index.html" %}
+{% block content %}
+<h1>Safety Analytics</h1>
+<div class="kpi-grid">
+  <div class="card"><span>Total Incidents</span><strong>{{ total }}</strong></div>
+  <div class="card"><span>Fire Incidents</span><strong>{{ fires }}</strong></div>
+  <div class="card"><span>Smoke Incidents</span><strong>{{ smokes }}</strong></div>
+</div>
+{% endblock %}

@@ -1,0 +1,16 @@
+body { margin: 0; font-family: system-ui, sans-serif; background: #f8fafc; color: #0f172a; }
+body.dark { background: #0b1120; color: #f8fafc; }
+.layout { display: flex; min-height: 100vh; }
+.sidebar { width: 240px; padding: 20px; border-right: 1px solid #e2e8f0; display: flex; flex-direction: column; gap: 12px; }
+.sidebar nav { display: flex; flex-direction: column; gap: 8px; }
+.sidebar a { color: inherit; text-decoration: none; padding: 8px 12px; border-radius: 6px; }
+.sidebar a:hover { background: rgba(148, 163, 184, 0.16); }
+.main-content { flex: 1; padding: 28px; }
+.kpi-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin: 16px 0; }
+.card { padding: 16px; border: 1px solid #cbd5e1; border-radius: 8px; }
+.status-banner { padding: 12px 16px; border-radius: 8px; font-weight: 600; margin-bottom: 16px; }
+.status-banner.normal { background: #dcfce7; color: #166534; }
+.status-banner.smoke_warning { background: #fef3c7; color: #92400e; }
+.status-banner.fire_emergency { background: #fee2e2; color: #991b1b; }
+table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+th, td { padding: 10px; border-bottom: 1px solid #cbd5e1; text-align: left; }

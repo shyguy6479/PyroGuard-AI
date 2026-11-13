@@ -1,0 +1,14 @@
+{% extends "index.html" %}
+{% block content %}
+<h1>Image Fire &amp; Smoke Detection</h1>
+<form method="POST" enctype="multipart/form-data">
+  <input type="file" name="image" accept=".jpg,.jpeg,.png" required />
+  <button type="submit" class="btn-primary">Analyze Image</button>
+</form>
+{% if result %}
+<div class="split-grid">
+  <div><h3>Original</h3><img src="/{{ result.original }}" alt="Original" /></div>
+  <div><h3>Detected Result</h3><img src="/{{ result.annotated }}" alt="Detected" /></div>
+</div>
+{% endif %}
+{% endblock %}

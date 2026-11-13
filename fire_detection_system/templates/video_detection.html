@@ -1,0 +1,12 @@
+{% extends "index.html" %}
+{% block content %}
+<h1>Video Fire &amp; Smoke Detection</h1>
+<form method="POST" enctype="multipart/form-data">
+  <input type="file" name="video" accept="video/*" required />
+  <button type="submit" class="btn-primary">Process Video</button>
+</form>
+{% if summary %}
+<p>Total Frames: {{ summary.total_frames }} | Fire Frames: {{ summary.fire_frames }} | Smoke Frames: {{ summary.smoke_frames }}</p>
+<video controls src="/{{ summary.video_url }}"></video>
+{% endif %}
+{% endblock %}

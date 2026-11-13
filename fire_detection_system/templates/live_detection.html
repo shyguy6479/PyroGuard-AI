@@ -1,0 +1,8 @@
+{% extends "index.html" %}
+{% block content %}
+<h1>Live Camera Detection</h1>
+<div id="liveAlertBox" class="status-banner normal">System Active – No Fire Detected</div>
+<div class="video-frame">
+  <img src="{{ url_for('video_feed') }}" alt="Live Webcam Feed" />
+</div>
+{% endblock %}

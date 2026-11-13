@@ -1,0 +1,35 @@
+{% extends "index.html" %}
+{% block content %}
+<h1>Fire Safety Dashboard</h1>
+<div class="status-banner {{ state.status }}">
+  {% if state.status == 'fire_emergency' %}
+    Fire Detected – Emergency Alert
+  {% elif state.status == 'smoke_warning' %}
+    Smoke Detected – Warning
+  {% else %}
+    System Active – No Fire Detected
+  {% endif %}
+</div>
+<div class="kpi-grid">
+  <div class="card"><span>Total Detections</span><strong>{{ total }}</strong></div>
+  <div class="card"><span>Fire Detections</span><strong>{{ fires }}</strong></div>
+  <div class="card"><span>Smoke Detections</span><strong>{{ smokes }}</strong></div>
+</div>
+<h2>Recent Incidents</h2>
+<table>
+  <thead>
+    <tr><th>ID</th><th>Time</th><th>Type</th><th>Confidence</th><th>Status</th></tr>
+  </thead>
+  <tbody>
+    {% for item in incidents %}
+    <tr>
+      <td>{{ item.incident_code }}</td>
+      <td>{{ item.timestamp }}</td>
+      <td>{{ item.detection_type }}</td>
+      <td>{{ item.confidence }}%</td>
+      <td>{{ item.status }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
