@@ -1,51 +1,79 @@
 """
 AI/ML-Based Smart Fire and Smoke Detection System
-Flask + OpenCV + YOLOv8 + SQLite Backend
+Lightweight Flask Backend (Serverless-Compatible + Optional Lazy Local YOLOv8)
 """
 
-import os
+import base64
 import csv
+import importlib
 import io
-import time
+import json
+import os
 import smtplib
 import sqlite3
-from email.message import EmailMessage
+import time
 from datetime import datetime
-import cv2
-import numpy as np
+from email.message import EmailMessage
+
 from flask import (
     Flask,
-    render_template,
     Response,
-    request,
-    redirect,
-    url_for,
     jsonify,
+    render_template,
+    request,
     send_file,
+    send_from_directory,
 )
 from werkzeug.utils import secure_filename
 
-# Optional YOLOv8 import (falls back cleanly to OpenCV HSV detection if weights are absent)
-try:
-    from ultralytics import YOLO
-    YOLO_AVAILABLE = True
-except ImportError:
-    YOLO_AVAILABLE = False
+from inference_service import (
+    MIN_CONFIDENCE_THRESHOLD,
+    MODEL_UNAVAILABLE_MESSAGE,
+    ModelUnavailableError,
+    detect_image_bytes,
+    get_model_status,
+    is_vercel_runtime,
+)
 
 app = Flask(__name__)
 
+ALLOWED_ORIGINS = [
+    o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()
+]
+
+
+@app.after_request
+def add_cors_headers(response):
+    origin = request.headers.get("Origin")
+    if not ALLOWED_ORIGINS:
+        response.headers["Access-Control-Allow-Origin"] = "*"
+    elif origin and origin in ALLOWED_ORIGINS:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Vary"] = "Origin"
+    response.headers["Access-Control-Allow-Methods"] = "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type,Authorization"
+    return response
+
+
+@app.route("/api/<path:_subpath>", methods=["OPTIONS"])
+def api_preflight(_subpath):
+    return ("", 204)
+
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "database", "fire_detection.db")
+WRITE_BASE = "/tmp/pyroguard_flask" if is_vercel_runtime() else BASE_DIR
+DB_PATH = os.path.join(WRITE_BASE, "database", "fire_detection.db")
 MODEL_PATH = os.path.join(BASE_DIR, "models", "fire_detection_model", "best.pt")
-INCIDENT_IMG_DIR = os.path.join(BASE_DIR, "saved_incidents", "detected_images")
-UPLOAD_DIR = os.path.join(BASE_DIR, "static", "uploads")
+INCIDENT_IMG_DIR = os.path.join(WRITE_BASE, "saved_incidents", "detected_images")
+UPLOAD_DIR = os.path.join(WRITE_BASE, "static", "uploads")
+SETTINGS_PATH = os.path.join(WRITE_BASE, "database", "settings.json")
 
 os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 os.makedirs(INCIDENT_IMG_DIR, exist_ok=True)
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # Detection & Alert Configuration
-CONFIDENCE_THRESHOLD = 0.70
+CONFIDENCE_THRESHOLD = MIN_CONFIDENCE_THRESHOLD  # 0.75 strict minimum
 PERSISTENCE_FRAMES_REQUIRED = 5
 ALERT_COOLDOWN_SECONDS = 15
 
@@ -55,15 +83,8 @@ system_state = {
     "last_confidence": 0.0,
     "consecutive_frames": 0,
     "last_alert_time": 0.0,
+    "model_enabled": True,
 }
-
-# Load YOLOv8 Model if available
-yolo_model = None
-if YOLO_AVAILABLE and os.path.exists(MODEL_PATH):
-    yolo_model = YOLO(MODEL_PATH)
-    print(f"Loaded YOLOv8 model from {MODEL_PATH}")
-else:
-    print("YOLOv8 best.pt not found — using OpenCV HSV Fire/Smoke Computer Vision fallback.")
 
 
 def get_db_connection():
@@ -74,7 +95,8 @@ def get_db_connection():
 
 def init_db():
     conn = get_db_connection()
-    conn.execute("""
+    conn.execute(
+        """
         CREATE TABLE IF NOT EXISTS incidents (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             incident_code TEXT UNIQUE NOT NULL,
@@ -84,9 +106,15 @@ def init_db():
             screenshot_path TEXT NOT NULL,
             source TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'Active',
-            email_sent INTEGER NOT NULL DEFAULT 0
+            email_sent INTEGER NOT NULL DEFAULT 0,
+            notes TEXT DEFAULT ''
         )
-    """)
+        """
+    )
+    try:
+        conn.execute("ALTER TABLE incidents ADD COLUMN notes TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     conn.close()
 
@@ -94,11 +122,35 @@ def init_db():
 init_db()
 
 
+def read_settings():
+    defaults = {
+        "confidenceThreshold": 75,
+        "persistenceFrames": 5,
+        "cooldownSeconds": 15,
+        "alarmEnabled": False,
+        "emailAlertsEnabled": True,
+        "alertEmail": "safety-officer@campus-lab.edu",
+    }
+    if os.path.exists(SETTINGS_PATH):
+        try:
+            with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                defaults.update(data)
+        except Exception:
+            pass
+    defaults["confidenceThreshold"] = max(75, int(defaults.get("confidenceThreshold", 75)))
+    defaults["persistenceFrames"] = max(5, int(defaults.get("persistenceFrames", 5)))
+    return defaults
+
+
+def write_settings(updated):
+    with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
+        json.dump(updated, f, indent=2)
+
+
 def send_email_alert(recipient, detection_type, confidence, timestamp, image_path):
-    """
-    Sends an email alert with incident screenshot attached via SMTP.
-    Configure SMTP_USER and SMTP_PASS environment variables for live email sending.
-    """
+    """Sends an email alert when SMTP_USER and SMTP_PASS environment variables are configured."""
     smtp_user = os.environ.get("SMTP_USER")
     smtp_pass = os.environ.get("SMTP_PASS")
     if not smtp_user or not smtp_pass:
@@ -119,7 +171,10 @@ def send_email_alert(recipient, detection_type, confidence, timestamp, image_pat
         if os.path.exists(image_path):
             with open(image_path, "rb") as f:
                 msg.add_attachment(
-                    f.read(), maintype="image", subtype="jpeg", filename=os.path.basename(image_path)
+                    f.read(),
+                    maintype="image",
+                    subtype="jpeg",
+                    filename=os.path.basename(image_path),
                 )
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
             smtp.login(smtp_user, smtp_pass)
@@ -130,59 +185,7 @@ def send_email_alert(recipient, detection_type, confidence, timestamp, image_pat
         return False
 
 
-def detect_fire_and_smoke(frame, conf_threshold=CONFIDENCE_THRESHOLD):
-    """
-    Runs YOLOv8 inference when weights exist, or OpenCV HSV contour analysis as fallback.
-    Returns (annotated_frame, detections_list).
-    """
-    annotated = frame.copy()
-    detections = []
-
-    if yolo_model is not None:
-        results = yolo_model(frame, conf=conf_threshold, verbose=False)
-        for r in results:
-            for box in r.boxes:
-                cls_id = int(box.cls[0])
-                conf = float(box.conf[0])
-                label = yolo_model.names.get(cls_id, "Fire")
-                x1, y1, x2, y2 = map(int, box.xyxy[0])
-                detections.append({
-                    "label": label,
-                    "confidence": round(conf * 100, 1),
-                    "bbox": [x1, y1, x2, y2],
-                })
-    else:
-        # OpenCV HSV Fire + Smoke fallback
-        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-        fire_mask = cv2.inRange(hsv, np.array([0, 110, 175]), np.array([28, 255, 255]))
-        smoke_mask = cv2.inRange(hsv, np.array([0, 0, 115]), np.array([180, 42, 220]))
-
-        for label, mask, min_area in [("Fire", fire_mask, 900), ("Smoke", smoke_mask, 2400)]:
-            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            for cnt in contours:
-                area = cv2.contourArea(cnt)
-                if area >= min_area:
-                    x, y, w, h = cv2.boundingRect(cnt)
-                    conf = min(98.0, round(62.0 + (area / (frame.shape[0] * frame.shape[1])) * 120.0, 1))
-                    if conf >= conf_threshold * 100:
-                        detections.append({
-                            "label": label,
-                            "confidence": conf,
-                            "bbox": [x, y, x + w, y + h],
-                        })
-
-    for det in detections:
-        x1, y1, x2, y2 = det["bbox"]
-        color = (38, 38, 220) if det["label"].lower() == "fire" else (6, 119, 217)
-        cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 3)
-        tag = f"{det['label'].upper()} {det['confidence']}%"
-        cv2.rectangle(annotated, (x1, max(0, y1 - 26)), (x1 + 170, y1), color, -1)
-        cv2.putText(annotated, tag, (x1 + 6, max(16, y1 - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2)
-
-    return annotated, detections
-
-
-def record_incident(frame, detections, source="Live Camera"):
+def record_incident(annotated_bytes, detections, source="Live Camera"):
     if not detections:
         return None
     has_fire = any(d["label"].lower() == "fire" for d in detections)
@@ -193,10 +196,17 @@ def record_incident(frame, detections, source="Live Camera"):
     code = f"INC-{int(time.time())}"
     filename = f"{code}.jpg"
     save_path = os.path.join(INCIDENT_IMG_DIR, filename)
-    cv2.imwrite(save_path, frame)
+    with open(save_path, "wb") as f:
+        f.write(annotated_bytes)
 
     rel_path = f"saved_incidents/detected_images/{filename}"
-    email_sent = 1 if send_email_alert("safety-officer@example.com", det_type, max_conf, timestamp, save_path) else 0
+    email_sent = (
+        1
+        if send_email_alert(
+            "safety-officer@example.com", det_type, max_conf, timestamp, save_path
+        )
+        else 0
+    )
 
     conn = get_db_connection()
     conn.execute(
@@ -212,6 +222,12 @@ def record_incident(frame, detections, source="Live Camera"):
 
 
 def generate_camera_frames():
+    """Local-only webcam streaming loop (lazily imports cv2 only when invoked)."""
+    try:
+        cv2 = importlib.import_module("cv2")
+    except ImportError:
+        return
+
     camera = cv2.VideoCapture(0)
     if not camera.isOpened():
         return
@@ -220,7 +236,18 @@ def generate_camera_frames():
             success, frame = camera.read()
             if not success:
                 break
-            annotated, detections = detect_fire_and_smoke(frame)
+            ok, encoded = cv2.imencode(".jpg", frame)
+            if not ok:
+                continue
+            try:
+                annotated_bytes, detections = detect_image_bytes(
+                    encoded.tobytes(), MODEL_PATH, CONFIDENCE_THRESHOLD, "image/jpeg"
+                )
+            except ModelUnavailableError:
+                system_state["consecutive_frames"] = 0
+                system_state["status"] = "normal"
+                annotated_bytes = encoded.tobytes()
+                detections = []
 
             if detections:
                 system_state["consecutive_frames"] += 1
@@ -234,17 +261,14 @@ def generate_camera_frames():
                     and now - system_state["last_alert_time"] >= ALERT_COOLDOWN_SECONDS
                 ):
                     system_state["last_alert_time"] = now
-                    record_incident(annotated, detections, "Live Camera")
+                    record_incident(annotated_bytes, detections, "Live Camera")
             else:
                 system_state["consecutive_frames"] = 0
                 system_state["status"] = "normal"
 
-            ret, buffer = cv2.imencode(".jpg", annotated)
-            if not ret:
-                continue
             yield (
                 b"--frame\r\n"
-                b"Content-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n"
+                b"Content-Type: image/jpeg\r\n\r\n" + annotated_bytes + b"\r\n"
             )
     finally:
         camera.release()
@@ -255,59 +279,334 @@ def dashboard():
     conn = get_db_connection()
     incidents = conn.execute("SELECT * FROM incidents ORDER BY id DESC LIMIT 6").fetchall()
     total = conn.execute("SELECT COUNT(*) FROM incidents").fetchone()[0]
-    fires = conn.execute("SELECT COUNT(*) FROM incidents WHERE detection_type LIKE '%Fire%'").fetchone()[0]
-    smokes = conn.execute("SELECT COUNT(*) FROM incidents WHERE detection_type LIKE '%Smoke%'").fetchone()[0]
+    fires = conn.execute(
+        "SELECT COUNT(*) FROM incidents WHERE detection_type LIKE '%Fire%'"
+    ).fetchone()[0]
+    smokes = conn.execute(
+        "SELECT COUNT(*) FROM incidents WHERE detection_type LIKE '%Smoke%'"
+    ).fetchone()[0]
     conn.close()
-    return render_template("dashboard.html", incidents=incidents, total=total, fires=fires, smokes=smokes, state=system_state)
+    return render_template(
+        "dashboard.html",
+        incidents=incidents,
+        total=total,
+        fires=fires,
+        smokes=smokes,
+        state=system_state,
+        model_status=get_model_status(MODEL_PATH),
+    )
 
 
 @app.route("/live")
 def live_detection():
-    return render_template("live_detection.html", state=system_state)
+    return render_template(
+        "live_detection.html",
+        state=system_state,
+        model_status=get_model_status(MODEL_PATH),
+    )
 
 
 @app.route("/video_feed")
 def video_feed():
-    return Response(generate_camera_frames(), mimetype="multipart/x-mixed-replace; boundary=frame")
+    return Response(
+        generate_camera_frames(), mimetype="multipart/x-mixed-replace; boundary=frame"
+    )
+
+
+@app.route("/saved_incidents/detected_images/<path:filename>")
+def serve_incident_image(filename):
+    return send_from_directory(INCIDENT_IMG_DIR, filename)
 
 
 @app.route("/api/status")
 def api_status():
-    return jsonify(system_state)
+    return jsonify({**system_state, "model": get_model_status(MODEL_PATH, system_state["model_enabled"])})
+
+
+@app.route("/api/health")
+def api_health():
+    status = get_model_status(MODEL_PATH, system_state["model_enabled"])
+    return jsonify({"ok": True, "geminiConfigured": status["modelLoaded"], **status})
+
+
+@app.route("/api/model/status", methods=["POST"])
+def api_model_status():
+    payload = request.get_json(silent=True) or {}
+    enabled = payload.get("enabled")
+    if not isinstance(enabled, bool):
+        return jsonify({"error": 'Boolean "enabled" flag is required.'}), 400
+    system_state["model_enabled"] = enabled
+    return jsonify(get_model_status(MODEL_PATH, enabled))
+
+
+@app.route("/api/incidents", methods=["GET", "POST"])
+def api_incidents():
+    if request.method == "GET":
+        conn = get_db_connection()
+        rows = conn.execute("SELECT * FROM incidents ORDER BY id DESC").fetchall()
+        conn.close()
+        incidents = [
+            {
+                "id": r["incident_code"],
+                "timestamp": r["timestamp"],
+                "detectionType": r["detection_type"],
+                "confidence": round(float(r["confidence"])),
+                "screenshotUrl": "/" + r["screenshot_path"].lstrip("/"),
+                "status": r["status"],
+                "source": r["source"],
+                "emailSent": bool(r["email_sent"]),
+                "notes": r["notes"] if "notes" in r.keys() else "",
+            }
+            for r in rows
+        ]
+        return jsonify({"incidents": incidents, "settings": read_settings(), "emailLogs": []})
+
+    payload = request.get_json(silent=True) or {}
+    det_type = payload.get("detectionType")
+    confidence = payload.get("confidence")
+    if not det_type or not isinstance(confidence, (int, float)):
+        return jsonify({"error": "detectionType and numeric confidence are required."}), 400
+
+    code = f"INC-{int(time.time())}-{int((time.time() % 1) * 1000):03d}"
+    timestamp = datetime.utcnow().isoformat() + "Z"
+    source = payload.get("source") or "Live Camera"
+    notes = payload.get("notes") or ""
+    screenshot_b64 = payload.get("screenshotDataUrl", "")
+    filename = f"{code}.jpg"
+    save_path = os.path.join(INCIDENT_IMG_DIR, filename)
+    if isinstance(screenshot_b64, str) and "," in screenshot_b64:
+        try:
+            with open(save_path, "wb") as f:
+                f.write(base64.b64decode(screenshot_b64.split(",", 1)[1]))
+        except Exception:
+            pass
+    rel_path = f"saved_incidents/detected_images/{filename}"
+
+    conn = get_db_connection()
+    conn.execute(
+        """
+        INSERT INTO incidents (incident_code, timestamp, detection_type, confidence, screenshot_path, source, status, email_sent, notes)
+        VALUES (?, ?, ?, ?, ?, ?, 'Active', 0, ?)
+        """,
+        (code, timestamp, det_type, float(confidence), rel_path, source, notes),
+    )
+    conn.commit()
+    conn.close()
+    return (
+        jsonify(
+            {
+                "incident": {
+                    "id": code,
+                    "timestamp": timestamp,
+                    "detectionType": det_type,
+                    "confidence": round(float(confidence)),
+                    "screenshotUrl": f"/{rel_path}",
+                    "status": "Active",
+                    "source": source,
+                    "emailSent": False,
+                    "notes": notes,
+                },
+                "emailLogs": [],
+            }
+        ),
+        201,
+    )
+
+
+@app.route("/api/incidents/<incident_code>", methods=["PATCH", "DELETE"])
+def api_incident_detail(incident_code):
+    conn = get_db_connection()
+    if request.method == "DELETE":
+        cur = conn.execute("DELETE FROM incidents WHERE incident_code = ?", (incident_code,))
+        conn.commit()
+        conn.close()
+        if cur.rowcount == 0:
+            return jsonify({"error": "Incident not found."}), 404
+        return jsonify({"deleted": True, "id": incident_code})
+
+    payload = request.get_json(silent=True) or {}
+    new_status = payload.get("status")
+    if not new_status:
+        conn.close()
+        return jsonify({"error": "Status is required."}), 400
+    conn.execute("UPDATE incidents SET status = ? WHERE incident_code = ?", (new_status, incident_code))
+    conn.commit()
+    row = conn.execute("SELECT * FROM incidents WHERE incident_code = ?", (incident_code,)).fetchone()
+    conn.close()
+    if row is None:
+        return jsonify({"error": "Incident not found."}), 404
+    return jsonify(
+        {
+            "incident": {
+                "id": row["incident_code"],
+                "timestamp": row["timestamp"],
+                "detectionType": row["detection_type"],
+                "confidence": round(float(row["confidence"])),
+                "screenshotUrl": "/" + row["screenshot_path"].lstrip("/"),
+                "status": row["status"],
+                "source": row["source"],
+                "emailSent": bool(row["email_sent"]),
+                "notes": row["notes"] if "notes" in row.keys() else "",
+            }
+        }
+    )
+
+
+@app.route("/api/settings", methods=["PUT"])
+def api_settings():
+    current = read_settings()
+    payload = request.get_json(silent=True) or {}
+    current.update(payload)
+    current["confidenceThreshold"] = max(75, int(current.get("confidenceThreshold", 75)))
+    current["persistenceFrames"] = max(5, int(current.get("persistenceFrames", 5)))
+    write_settings(current)
+    return jsonify({"settings": current})
+
+
+@app.route("/api/alerts/test-email", methods=["POST"])
+def api_test_email():
+    payload = request.get_json(silent=True) or {}
+    recipient = payload.get("recipient") or read_settings().get("alertEmail", "safety-officer@campus-lab.edu")
+    return jsonify(
+        {
+            "emailLogs": [
+                {
+                    "id": f"MAIL-{int(time.time())}",
+                    "incidentId": "TEST-ALERT",
+                    "recipient": recipient,
+                    "subject": "[TEST] PyroGuard AI Alert Dispatch",
+                    "sentAt": datetime.utcnow().isoformat() + "Z",
+                    "detectionType": "Fire",
+                    "confidence": 100,
+                    "status": "Logged (SMTP Demo)",
+                }
+            ]
+        }
+    )
+
+
+@app.route("/api/detect", methods=["POST"])
+def api_detect():
+    """Serverless / WSGI JSON inference endpoint delegating to YOLOv8, external API, or Gemini Vision."""
+    status = get_model_status(MODEL_PATH, system_state["model_enabled"])
+    if not system_state["model_enabled"]:
+        return jsonify({**status, "modelLoaded": False, "error": MODEL_UNAVAILABLE_MESSAGE, "detections": []}), 503
+
+    file = request.files.get("image")
+    image_bytes = None
+    mime_type = "image/jpeg"
+    threshold_ratio = CONFIDENCE_THRESHOLD
+
+    if file and file.filename:
+        image_bytes = file.read()
+        mime_type = file.mimetype or "image/jpeg"
+    elif request.is_json:
+        payload = request.get_json(silent=True) or {}
+        b64_raw = payload.get("imageBase64", "")
+        mime_type = payload.get("mimeType", "image/jpeg")
+        req_thresh = payload.get("threshold")
+        if isinstance(req_thresh, (int, float)):
+            ratio = float(req_thresh) / 100.0 if float(req_thresh) > 1.0 else float(req_thresh)
+            threshold_ratio = max(CONFIDENCE_THRESHOLD, ratio)
+        if b64_raw:
+            b64_clean = b64_raw.split(",", 1)[-1]
+            image_bytes = base64.b64decode(b64_clean)
+
+    if not image_bytes:
+        return jsonify({"error": "Image file or imageBase64 payload is required."}), 400
+
+    start_ms = time.time()
+    try:
+        _, detections = detect_image_bytes(
+            image_bytes, MODEL_PATH, threshold_ratio, mime_type
+        )
+        return jsonify(
+            {
+                **status,
+                "model_loaded": True,
+                "modelLoaded": True,
+                "detections": detections,
+                "inferenceMs": int((time.time() - start_ms) * 1000),
+                "engine": status.get("modelName", "PyroGuard AI"),
+            }
+        )
+    except ModelUnavailableError as exc:
+        return (
+            jsonify(
+                {
+                    **status,
+                    "model_loaded": False,
+                    "modelLoaded": False,
+                    "error": str(exc) or MODEL_UNAVAILABLE_MESSAGE,
+                    "detections": [],
+                }
+            ),
+            503,
+        )
 
 
 @app.route("/image", methods=["GET", "POST"])
 def image_detection():
     result = None
+    error_message = None
     if request.method == "POST":
         file = request.files.get("image")
         if file and file.filename:
             filename = secure_filename(file.filename)
+            raw_bytes = file.read()
             orig_path = os.path.join(UPLOAD_DIR, filename)
-            file.save(orig_path)
+            with open(orig_path, "wb") as f:
+                f.write(raw_bytes)
 
-            img = cv2.imread(orig_path)
-            if img is not None:
-                annotated, detections = detect_fire_and_smoke(img)
-                out_name = f"det_{filename}"
+            try:
+                annotated_bytes, detections = detect_image_bytes(
+                    raw_bytes,
+                    MODEL_PATH,
+                    CONFIDENCE_THRESHOLD,
+                    file.mimetype or "image/jpeg",
+                )
+                out_name = f"det_{filename}.jpg"
                 out_path = os.path.join(UPLOAD_DIR, out_name)
-                cv2.imwrite(out_path, annotated)
+                with open(out_path, "wb") as f:
+                    f.write(annotated_bytes)
                 if detections:
-                    record_incident(annotated, detections, "Image Upload")
+                    record_incident(annotated_bytes, detections, "Image Upload")
                 result = {
                     "original": f"static/uploads/{filename}",
                     "annotated": f"static/uploads/{out_name}",
                     "detections": detections,
                 }
-    return render_template("image_detection.html", result=result)
+            except ModelUnavailableError as exc:
+                error_message = str(exc) or MODEL_UNAVAILABLE_MESSAGE
+
+    return render_template(
+        "image_detection.html",
+        result=result,
+        error_message=error_message,
+        model_status=get_model_status(MODEL_PATH),
+    )
 
 
 @app.route("/video", methods=["GET", "POST"])
 def video_detection():
     summary = None
+    error_message = None
     if request.method == "POST":
         file = request.files.get("video")
         if file and file.filename:
+            try:
+                cv2 = importlib.import_module("cv2")
+            except ImportError:
+                return (
+                    render_template(
+                        "video_detection.html",
+                        summary=None,
+                        error_message="Video transcoding via OpenCV is available in local mode (requirements-local.txt), not in the lightweight serverless bundle.",
+                        model_status=get_model_status(MODEL_PATH),
+                    ),
+                    400,
+                )
+
             filename = secure_filename(file.filename)
             in_path = os.path.join(UPLOAD_DIR, filename)
             out_name = f"processed_{filename}.mp4"
@@ -321,26 +620,47 @@ def video_detection():
             writer = cv2.VideoWriter(out_path, cv2.VideoWriter_fourcc(*"mp4v"), fps, (w, h))
 
             fire_frames, smoke_frames, total_frames = 0, 0, 0
-            while cap.isOpened():
-                ret, frame = cap.read()
-                if not ret:
-                    break
-                total_frames += 1
-                annotated, detections = detect_fire_and_smoke(frame)
-                if any(d["label"].lower() == "fire" for d in detections):
-                    fire_frames += 1
-                if any(d["label"].lower() == "smoke" for d in detections):
-                    smoke_frames += 1
-                writer.write(annotated)
-            cap.release()
-            writer.release()
-            summary = {
-                "video_url": f"static/uploads/{out_name}",
-                "total_frames": total_frames,
-                "fire_frames": fire_frames,
-                "smoke_frames": smoke_frames,
-            }
-    return render_template("video_detection.html", summary=summary)
+            try:
+                while cap.isOpened():
+                    ret, frame = cap.read()
+                    if not ret:
+                        break
+                    total_frames += 1
+                    ok, encoded = cv2.imencode(".jpg", frame)
+                    if not ok:
+                        continue
+                    annotated_bytes, detections = detect_image_bytes(
+                        encoded.tobytes(), MODEL_PATH, CONFIDENCE_THRESHOLD, "image/jpeg"
+                    )
+                    if any(d["label"].lower() == "fire" for d in detections):
+                        fire_frames += 1
+                    if any(d["label"].lower() == "smoke" for d in detections):
+                        smoke_frames += 1
+                    np_mod = importlib.import_module("numpy")
+                    arr = np_mod.frombuffer(annotated_bytes, np_mod.uint8)
+                    dec = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+                    if dec is not None:
+                        writer.write(dec)
+            except ModelUnavailableError as exc:
+                error_message = str(exc) or MODEL_UNAVAILABLE_MESSAGE
+            finally:
+                cap.release()
+                writer.release()
+
+            if not error_message:
+                summary = {
+                    "video_url": f"static/uploads/{out_name}",
+                    "total_frames": total_frames,
+                    "fire_frames": fire_frames,
+                    "smoke_frames": smoke_frames,
+                }
+
+    return render_template(
+        "video_detection.html",
+        summary=summary,
+        error_message=error_message,
+        model_status=get_model_status(MODEL_PATH),
+    )
 
 
 @app.route("/history")
@@ -370,20 +690,49 @@ def export_csv():
 
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["Incident Code", "Timestamp", "Type", "Confidence (%)", "Source", "Status", "Email Sent"])
+    writer.writerow(
+        [
+            "Incident Code",
+            "Timestamp",
+            "Type",
+            "Confidence (%)",
+            "Source",
+            "Status",
+            "Email Sent",
+        ]
+    )
     for r in rows:
-        writer.writerow([r["incident_code"], r["timestamp"], r["detection_type"], r["confidence"], r["source"], r["status"], "Yes" if r["email_sent"] else "No"])
+        writer.writerow(
+            [
+                r["incident_code"],
+                r["timestamp"],
+                r["detection_type"],
+                r["confidence"],
+                r["source"],
+                r["status"],
+                "Yes" if r["email_sent"] else "No",
+            ]
+        )
 
     mem = io.BytesIO(output.getvalue().encode("utf-8"))
-    return send_file(mem, mimetype="text/csv", as_attachment=True, download_name="fire_detection_report.csv")
+    return send_file(
+        mem,
+        mimetype="text/csv",
+        as_attachment=True,
+        download_name="fire_detection_report.csv",
+    )
 
 
 @app.route("/analytics")
 def analytics():
     conn = get_db_connection()
     total = conn.execute("SELECT COUNT(*) FROM incidents").fetchone()[0]
-    fires = conn.execute("SELECT COUNT(*) FROM incidents WHERE detection_type LIKE '%Fire%'").fetchone()[0]
-    smokes = conn.execute("SELECT COUNT(*) FROM incidents WHERE detection_type LIKE '%Smoke%'").fetchone()[0]
+    fires = conn.execute(
+        "SELECT COUNT(*) FROM incidents WHERE detection_type LIKE '%Fire%'"
+    ).fetchone()[0]
+    smokes = conn.execute(
+        "SELECT COUNT(*) FROM incidents WHERE detection_type LIKE '%Smoke%'"
+    ).fetchone()[0]
     conn.close()
     return render_template("analytics.html", total=total, fires=fires, smokes=smokes)
 

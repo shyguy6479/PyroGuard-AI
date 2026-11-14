@@ -496,21 +496,28 @@ export const LiveDetectionPage: React.FC<LiveDetectionPageProps> = ({
     setAutoSaveBanner('Verified incident snapshot saved to history.');
   };
 
+  const requiredFramesCount = Math.max(
+    MIN_CONSECUTIVE_FRAMES,
+    settings.persistenceFrames
+  );
+  const clampedConsecutive = Math.min(consecutiveFrames, requiredFramesCount);
+  const verificationPct = Math.round((clampedConsecutive / requiredFramesCount) * 100);
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Mode Separation & Stream Controls */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
             <div className="inline-flex rounded-lg p-1 bg-slate-100 dark:bg-slate-800">
               <button
                 type="button"
                 onClick={() => handleSwitchMode('webcam')}
                 data-testid="mode-live-webcam"
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors whitespace-nowrap ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all whitespace-nowrap ${
                   feedMode === 'webcam'
-                    ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
-                    : 'text-slate-600 dark:text-slate-300'
+                    ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
                 <Camera className="w-3.5 h-3.5" />
@@ -520,10 +527,10 @@ export const LiveDetectionPage: React.FC<LiveDetectionPageProps> = ({
                 type="button"
                 onClick={() => handleSwitchMode('simulation')}
                 data-testid="mode-demo-simulation"
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors whitespace-nowrap ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all whitespace-nowrap ${
                   feedMode === 'simulation'
-                    ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
-                    : 'text-slate-600 dark:text-slate-300'
+                    ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
                 <MonitorPlay className="w-3.5 h-3.5" />
@@ -580,11 +587,32 @@ export const LiveDetectionPage: React.FC<LiveDetectionPageProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsRunning((prev) => !prev)}
+              className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap ${
+                isRunning
+                  ? 'bg-slate-900 dark:bg-slate-700 text-white hover:bg-slate-800 dark:hover:bg-slate-600'
+                  : 'bg-orange-600 text-white hover:bg-orange-700'
+              }`}
+            >
+              {isRunning ? <Square className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+              <span>
+                {feedMode === 'webcam'
+                  ? isRunning
+                    ? 'Stop Camera'
+                    : 'Start Camera'
+                  : isRunning
+                    ? 'Pause Stream'
+                    : 'Resume Stream'}
+              </span>
+            </button>
+
             {!alarmEnabled ? (
               <button
                 type="button"
                 onClick={onEnableAlarm}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-orange-600 hover:bg-orange-700 text-white text-xs font-semibold transition-colors whitespace-nowrap"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-orange-300 dark:border-orange-800 bg-orange-50 dark:bg-orange-950/40 hover:bg-orange-100 dark:hover:bg-orange-950/70 text-orange-800 dark:text-orange-200 text-xs font-semibold transition-colors whitespace-nowrap"
               >
                 <Volume2 className="w-3.5 h-3.5" />
                 <span>Enable Alarm</span>
@@ -611,36 +639,34 @@ export const LiveDetectionPage: React.FC<LiveDetectionPageProps> = ({
 
             <button
               type="button"
-              onClick={() => setIsRunning((prev) => !prev)}
-              className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap ${
-                isRunning
-                  ? 'bg-slate-900 dark:bg-slate-700 text-white hover:bg-slate-800'
-                  : 'bg-orange-600 text-white hover:bg-orange-700'
-              }`}
-            >
-              {isRunning ? <Square className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-              <span>{isRunning ? 'Pause Stream' : 'Resume Stream'}</span>
-            </button>
-
-            <button
-              type="button"
               onClick={handleManualSnapshot}
+              title="Save an annotated evidence screenshot when Fire or Smoke is active"
               className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 whitespace-nowrap"
             >
               <BookmarkCheck className="w-3.5 h-3.5" />
-              <span>Capture Snapshot</span>
+              <span>Capture Screenshot</span>
             </button>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-xs text-slate-500 dark:text-slate-400">
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-2.5 border-t border-slate-100 dark:border-slate-800 text-xs text-slate-500 dark:text-slate-400">
           <span>
             {feedMode === 'webcam'
               ? `Active Mode: LIVE AI DETECTION (${webcamActive ? 'Webcam streaming' : 'Waiting for webcam'}) · Model: ${modelStatus.modelName} (${modelStatus.modelVersion})`
               : `DEMO MODE – SIMULATED DETECTION · Sample demonstration feed (${modelStatus.modelName})`}
           </span>
-          <span className="font-medium text-slate-700 dark:text-slate-200">
-            {alarmEnabled ? '🔊 Alarm Enabled' : '🔇 Alarm Disabled'}
+          <span className="font-medium text-slate-700 dark:text-slate-200 inline-flex items-center gap-1.5">
+            {alarmEnabled ? (
+              <>
+                <Volume2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                <span>Alarm Armed</span>
+              </>
+            ) : (
+              <>
+                <VolumeX className="w-3.5 h-3.5 text-slate-400" />
+                <span>Alarm Disabled</span>
+              </>
+            )}
           </span>
         </div>
       </div>
@@ -710,7 +736,7 @@ export const LiveDetectionPage: React.FC<LiveDetectionPageProps> = ({
           <button
             type="button"
             onClick={() => handleSwitchMode('simulation')}
-            className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold whitespace-nowrap shrink-0"
+            className="px-3.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold whitespace-nowrap shrink-0"
           >
             Open Demo / Simulation Mode
           </button>
@@ -729,7 +755,17 @@ export const LiveDetectionPage: React.FC<LiveDetectionPageProps> = ({
           id="live-video-processing-engine"
           className="lg:col-span-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4"
         >
-          <div className="relative w-full aspect-[4/3] bg-slate-950 rounded-lg overflow-hidden">
+          <div
+            className={`relative w-full aspect-[4/3] bg-slate-950 rounded-xl overflow-hidden border-2 transition-colors duration-200 ${
+              !modelStatus.modelLoaded
+                ? 'border-slate-700'
+                : isVerifiedHazard && lastResult.status === 'fire_emergency'
+                  ? 'border-red-600'
+                  : isVerifiedHazard && lastResult.status === 'smoke_warning'
+                    ? 'border-amber-500'
+                    : 'border-emerald-600/60 dark:border-emerald-700/60'
+            }`}
+          >
             <video
               ref={videoRef}
               autoPlay
@@ -744,6 +780,47 @@ export const LiveDetectionPage: React.FC<LiveDetectionPageProps> = ({
               data-testid="live-detection-canvas"
               className="relative z-10 w-full h-full object-contain"
             />
+
+            {/* Non-intrusive Viewport Status Overlay */}
+            <div className="pointer-events-none absolute top-3 left-3 right-3 z-20 flex items-center justify-between gap-2">
+              <div
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold backdrop-blur-sm border ${
+                  !modelStatus.modelLoaded
+                    ? 'bg-slate-900/85 border-slate-700 text-slate-200'
+                    : isVerifiedHazard && lastResult.status === 'fire_emergency'
+                      ? 'bg-red-600/90 border-red-400 text-white'
+                      : isVerifiedHazard && lastResult.status === 'smoke_warning'
+                        ? 'bg-amber-500/90 border-amber-300 text-slate-950'
+                        : 'bg-slate-900/80 border-emerald-500/50 text-emerald-300'
+                }`}
+              >
+                {!modelStatus.modelLoaded ? (
+                  <>
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                    <span>MODEL OFFLINE</span>
+                  </>
+                ) : isVerifiedHazard && lastResult.status === 'fire_emergency' ? (
+                  <>
+                    <Flame className="w-3.5 h-3.5 shrink-0" />
+                    <span>FIRE DETECTED ({lastResult.maxConfidence}%)</span>
+                  </>
+                ) : isVerifiedHazard && lastResult.status === 'smoke_warning' ? (
+                  <>
+                    <Wind className="w-3.5 h-3.5 shrink-0" />
+                    <span>SMOKE DETECTED ({lastResult.maxConfidence}%)</span>
+                  </>
+                ) : (
+                  <>
+                    <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+                    <span>SYSTEM SAFE</span>
+                  </>
+                )}
+              </div>
+
+              <div className="inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-mono font-semibold bg-slate-900/80 border border-slate-700/80 text-slate-200 backdrop-blur-sm">
+                {feedMode === 'webcam' ? 'LIVE WEBCAM' : 'DEMO FEED'}
+              </div>
+            </div>
           </div>
         </div>
 
@@ -790,8 +867,8 @@ export const LiveDetectionPage: React.FC<LiveDetectionPageProps> = ({
               {modelStatus.isLoading
                 ? 'AI Model Status: Loading'
                 : modelStatus.modelLoaded
-                  ? '🟢 AI Model: Loaded and Ready'
-                  : '🔴 AI Model: Not Loaded'}
+                  ? 'AI Model: Loaded and Ready'
+                  : 'AI Model: Not Loaded'}
             </div>
 
             <div className="space-y-2 text-xs pt-1">
@@ -830,7 +907,7 @@ export const LiveDetectionPage: React.FC<LiveDetectionPageProps> = ({
 
             <div className="space-y-3 text-sm">
               <div className="flex items-center justify-between py-2 border-b border-slate-100 dark:border-slate-800">
-                <span className="text-slate-500 dark:text-slate-400">Safety Status</span>
+                <span className="text-slate-500 dark:text-slate-400">Detection Status</span>
                 <span className="font-semibold flex items-center gap-1.5">
                   {!modelStatus.modelLoaded ? (
                     <span className="text-red-600 dark:text-red-400 inline-flex items-center gap-1">
@@ -846,33 +923,64 @@ export const LiveDetectionPage: React.FC<LiveDetectionPageProps> = ({
                     </span>
                   ) : (
                     <span className="text-emerald-600 dark:text-emerald-400 inline-flex items-center gap-1">
-                      <ShieldCheck className="w-4 h-4" /> 🟢 SYSTEM SAFE
+                      <ShieldCheck className="w-4 h-4" /> SYSTEM SAFE
                     </span>
                   )}
                 </span>
               </div>
 
-              <div className="flex items-center justify-between py-2 border-b border-slate-100 dark:border-slate-800">
-                <span className="text-slate-500 dark:text-slate-400">Peak Confidence</span>
-                <span className="font-mono font-semibold tabular-nums text-slate-900 dark:text-white">
-                  {modelStatus.modelLoaded ? `${lastResult.maxConfidence}%` : '--'}
-                </span>
+              <div className="py-2 border-b border-slate-100 dark:border-slate-800 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500 dark:text-slate-400">Confidence Score</span>
+                  <span className="font-mono font-semibold tabular-nums text-slate-900 dark:text-white">
+                    {modelStatus.modelLoaded ? `${lastResult.maxConfidence}%` : '--'}
+                  </span>
+                </div>
+                <div className="h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                  <div
+                    style={{ width: `${modelStatus.modelLoaded ? lastResult.maxConfidence : 0}%` }}
+                    className={`h-full rounded-full transition-all duration-200 ${
+                      lastResult.status === 'fire_emergency'
+                        ? 'bg-red-600'
+                        : lastResult.status === 'smoke_warning'
+                          ? 'bg-amber-500'
+                          : 'bg-emerald-500'
+                    }`}
+                  />
+                </div>
               </div>
 
-              <div className="flex items-center justify-between py-2 border-b border-slate-100 dark:border-slate-800">
-                <span className="text-slate-500 dark:text-slate-400">
-                  Multi-Frame Verification
-                </span>
-                <span
-                  data-testid="persistence-counter"
-                  className="font-mono font-semibold tabular-nums text-slate-900 dark:text-white"
+              <div className="py-2 border-b border-slate-100 dark:border-slate-800 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500 dark:text-slate-400">
+                    Multi-Frame Verification
+                  </span>
+                  <span
+                    data-testid="persistence-counter"
+                    className="font-mono font-semibold tabular-nums text-slate-900 dark:text-white"
+                  >
+                    {clampedConsecutive} / {requiredFramesCount} frames
+                  </span>
+                </div>
+                <div
+                  className="h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden"
+                  role="progressbar"
+                  aria-valuenow={clampedConsecutive}
+                  aria-valuemin={0}
+                  aria-valuemax={requiredFramesCount}
+                  aria-label="Multi-frame verification progress"
                 >
-                  {Math.min(
-                    consecutiveFrames,
-                    Math.max(MIN_CONSECUTIVE_FRAMES, settings.persistenceFrames)
-                  )}{' '}
-                  / {Math.max(MIN_CONSECUTIVE_FRAMES, settings.persistenceFrames)} frames
-                </span>
+                  <div
+                    style={{ width: `${verificationPct}%` }}
+                    className={`h-full rounded-full transition-all duration-200 ${
+                      verificationPct >= 100
+                        ? 'bg-red-600'
+                        : verificationPct > 0
+                          ? 'bg-orange-500'
+                          : 'bg-slate-300 dark:bg-slate-700'
+                    }`}
+                  />
+                </div>
               </div>
 
               <div className="flex items-center justify-between py-2 border-b border-slate-100 dark:border-slate-800">
@@ -882,9 +990,9 @@ export const LiveDetectionPage: React.FC<LiveDetectionPageProps> = ({
                 </span>
               </div>
 
-              <div className="flex items-center justify-between py-2">
-                <span className="text-slate-500 dark:text-slate-400">Inference Latency</span>
-                <span className="font-mono text-xs tabular-nums text-slate-600 dark:text-slate-300">
+              <div className="flex items-center justify-between py-1">
+                <span className="text-slate-500 dark:text-slate-400">Frame Processing Latency</span>
+                <span className="font-mono text-xs font-semibold tabular-nums text-slate-700 dark:text-slate-200">
                   {modelStatus.modelLoaded ? `${lastResult.inferenceMs} ms` : 'Unavailable'}
                 </span>
               </div>

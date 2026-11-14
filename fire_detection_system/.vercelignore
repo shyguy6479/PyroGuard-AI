@@ -1,0 +1,18 @@
+# Exclude large local AI weights and heavy local environments from Vercel serverless bundles
+*.pt
+*.pth
+*.onnx
+*.engine
+*.safetensors
+*.weights
+models/**/*.pt
+models/**/*.onnx
+requirements-local.txt
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+ENV/
+static/uploads/
+saved_incidents/
+database/*.db

@@ -31,7 +31,7 @@ export const EmergencyBanner: React.FC<EmergencyBannerProps> = ({
     <div
       role="alert"
       data-testid="emergency-alert-banner"
-      className={`mx-4 sm:mx-6 mt-4 rounded-xl border p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+      className={`mx-4 sm:mx-6 mt-4 rounded-xl border p-4 shadow-sm page-enter flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
         isFire
           ? 'bg-red-600 border-red-700 text-white'
           : 'bg-amber-500 border-amber-600 text-slate-950'
@@ -39,23 +39,23 @@ export const EmergencyBanner: React.FC<EmergencyBannerProps> = ({
     >
       <div className="flex items-start sm:items-center gap-3.5">
         <div
-          className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
-            isFire ? 'bg-red-700 text-white' : 'bg-amber-600/20 text-slate-950'
+          className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+            isFire ? 'bg-red-700 text-white' : 'bg-amber-600/25 text-slate-950'
           }`}
         >
-          {isFire ? <Flame className="w-6 h-6" /> : <AlertTriangle className="w-6 h-6" />}
+          {isFire ? <Flame className="w-5 h-5" /> : <AlertTriangle className="w-5 h-5" />}
         </div>
         <div>
-          <div className="font-display font-bold text-lg leading-tight">
-            {isFire ? '⚠ FIRE DETECTED!' : '⚠ SMOKE DETECTED!'}
+          <div className="font-display font-bold text-base sm:text-lg leading-tight flex items-center gap-2">
+            <span>{isFire ? 'FIRE DETECTED – EMERGENCY ALERT' : 'SMOKE DETECTED – WARNING'}</span>
           </div>
           <div
-            className={`text-sm mt-0.5 font-mono tabular-nums ${
+            className={`text-xs sm:text-sm mt-0.5 font-mono tabular-nums ${
               isFire ? 'text-red-100' : 'text-slate-900'
             }`}
           >
             Confidence: {confidence}% · Source: {sourceLabel} ·{' '}
-            {alarmEnabled ? (alarmSounding ? '🔊 Alarm Sounding' : '🔊 Alarm Ready') : '🔇 Alarm Disabled'}
+            {alarmEnabled ? (alarmSounding ? 'Alarm Sounding' : 'Alarm Armed') : 'Alarm Disabled'}
           </div>
         </div>
       </div>

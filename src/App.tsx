@@ -12,7 +12,7 @@ import type {
 } from './types/detection';
 import { alarmAudio } from './utils/alarmAudio';
 import { formatIncidentsCsv } from './utils/detectionLogic';
-import { DEFAULT_MODEL_STATUS, fetchModelStatus } from './services/detectionService';
+import { buildApiUrl, DEFAULT_MODEL_STATUS, fetchModelStatus } from './services/detectionService';
 import { Sidebar } from './components/Sidebar';
 import { TopBar } from './components/TopBar';
 import { EmergencyBanner } from './components/EmergencyBanner';
@@ -74,14 +74,18 @@ export default function App() {
   const fetchIncidents = useCallback(async () => {
     fetchModelStatus().then((model) => setModelStatus(model));
     try {
-      const incRes = await fetch('/api/incidents');
+      const incRes = await fetch(buildApiUrl('/api/incidents'));
       if (!incRes.ok) throw new Error('Failed to load incident history from server.');
       const data = (await incRes.json()) as {
         incidents: IncidentRecord[];
         settings: AlertSettings;
         emailLogs: EmailDispatchLog[];
       };
-      setIncidents(data.incidents ?? []);
+      const normalizeIncident = (inc: IncidentRecord): IncidentRecord =>
+        inc.screenshotUrl?.startsWith('/saved_incidents/')
+          ? { ...inc, screenshotUrl: buildApiUrl(inc.screenshotUrl) }
+          : inc;
+      setIncidents((data.incidents ?? []).map(normalizeIncident));
       if (data.settings) setSettings(data.settings);
       setEmailLogs(data.emailLogs ?? []);
       setLoadError('');
@@ -168,7 +172,7 @@ export default function App() {
       source: IncidentSource;
       notes?: string;
     }) => {
-      const res = await fetch('/api/incidents', {
+      const res = await fetch(buildApiUrl('/api/incidents'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -178,25 +182,31 @@ export default function App() {
         incident: IncidentRecord;
         emailLogs: EmailDispatchLog[];
       };
-      setIncidents((prev) => [data.incident, ...prev]);
+      const incident = data.incident?.screenshotUrl?.startsWith('/saved_incidents/')
+        ? { ...data.incident, screenshotUrl: buildApiUrl(data.incident.screenshotUrl) }
+        : data.incident;
+      setIncidents((prev) => [incident, ...prev]);
       if (data.emailLogs) setEmailLogs(data.emailLogs);
     },
     []
   );
 
   const handleUpdateStatus = async (id: string, status: IncidentStatus) => {
-    const res = await fetch(`/api/incidents/${encodeURIComponent(id)}`, {
+    const res = await fetch(buildApiUrl(`/api/incidents/${encodeURIComponent(id)}`), {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status }),
     });
     if (!res.ok) return;
     const data = (await res.json()) as { incident: IncidentRecord };
-    setIncidents((prev) => prev.map((item) => (item.id === id ? data.incident : item)));
+    const updated = data.incident?.screenshotUrl?.startsWith('/saved_incidents/')
+      ? { ...data.incident, screenshotUrl: buildApiUrl(data.incident.screenshotUrl) }
+      : data.incident;
+    setIncidents((prev) => prev.map((item) => (item.id === id ? updated : item)));
   };
 
   const handleDeleteIncident = async (id: string) => {
-    const res = await fetch(`/api/incidents/${encodeURIComponent(id)}`, {
+    const res = await fetch(buildApiUrl(`/api/incidents/${encodeURIComponent(id)}`), {
       method: 'DELETE',
     });
     if (!res.ok) return;
@@ -205,7 +215,7 @@ export default function App() {
 
   const handleUpdateSettings = async (partial: Partial<AlertSettings>) => {
     setSettings((prev) => ({ ...prev, ...partial }));
-    const res = await fetch('/api/settings', {
+    const res = await fetch(buildApiUrl('/api/settings'), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(partial),
@@ -217,7 +227,7 @@ export default function App() {
   };
 
   const handleSendTestEmail = async (recipient: string) => {
-    const res = await fetch('/api/alerts/test-email', {
+    const res = await fetch(buildApiUrl('/api/alerts/test-email'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ recipient }),
@@ -257,6 +267,8 @@ export default function App() {
         activePage={activePage}
         onNavigate={handleNavigate}
         activeAlertsCount={activeAlertsCount}
+        systemStatus={systemStatus}
+        modelStatus={modelStatus}
         mobileOpen={mobileMenuOpen}
         onCloseMobile={() => setMobileMenuOpen(false)}
       />
@@ -310,7 +322,7 @@ export default function App() {
               </div>
             </div>
           ) : (
-            <>
+            <div key={activePage} className="page-enter">
               {activePage === 'dashboard' && (
                 <DashboardPage
                   incidents={incidents}
@@ -376,7 +388,7 @@ export default function App() {
               )}
 
               {activePage === 'about' && <AboutProjectPage />}
-            </>
+            </div>
           )}
         </main>
       </div>

@@ -1,0 +1,11 @@
+fire_detection_system/
+saved_incidents/
+database/
+.playwright-cli/
+.aistudio/
+public/assets/aistudio/
+*.log
+*.pt
+*.onnx
+*.pth
+

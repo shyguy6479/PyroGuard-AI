@@ -5,9 +5,12 @@ export const AboutProjectPage: React.FC = () => {
   return (
     <div className="space-y-6 max-w-5xl">
       {/* Project Overview */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 space-y-3">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 space-y-2.5">
+        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-orange-50 dark:bg-orange-950/50 text-orange-700 dark:text-orange-300 text-xs font-semibold border border-orange-200 dark:border-orange-900">
+          B.Tech Computer Vision Safety System
+        </div>
         <h2 className="font-display font-bold text-xl text-slate-900 dark:text-white">
-          AI/ML-Based Smart Fire and Smoke Detection System
+          PyroGuard AI – Smart Fire and Smoke Detection System
         </h2>
         <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
           An intelligent computer-vision safety monitoring system built for B.Tech engineering demonstration. It detects open flames and early smoke plumes across live webcam feeds, uploaded images, and recorded videos, filters transient noise using multi-frame persistence, triggers an audible &amp; visual emergency alarm with cooldown protection, and logs every incident with a screenshot into a persistent database.
@@ -16,50 +19,60 @@ export const AboutProjectPage: React.FC = () => {
 
       {/* Simple Viva Workflow Explanation */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 space-y-5">
-        <div className="flex items-center gap-2">
-          <Cpu className="w-5 h-5 text-orange-600" />
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-orange-50 dark:bg-orange-950/50 text-orange-600 dark:text-orange-400 flex items-center justify-center shrink-0">
+            <Cpu className="w-4 h-4" />
+          </div>
           <h3 className="font-display font-semibold text-base text-slate-900 dark:text-white">
             How the AI/ML Pipeline Works (Viva Explanation Guide)
           </h3>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="p-4 rounded-lg border border-slate-200 dark:border-slate-800 space-y-1.5">
-            <div className="font-mono text-xs font-semibold text-orange-600">Step 1 · Capture</div>
+          <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 space-y-1.5">
+            <div className="font-mono text-xs font-semibold text-orange-600 dark:text-orange-400">
+              Step 1 · Capture
+            </div>
             <div className="text-sm font-semibold text-slate-900 dark:text-white">
               Frame Acquisition
             </div>
-            <p className="text-xs text-slate-600 dark:text-slate-300">
+            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
               Webcam, image upload, or video stream is sampled into RGB image frames at fixed intervals.
             </p>
           </div>
 
-          <div className="p-4 rounded-lg border border-slate-200 dark:border-slate-800 space-y-1.5">
-            <div className="font-mono text-xs font-semibold text-orange-600">Step 2 · Inference</div>
+          <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 space-y-1.5">
+            <div className="font-mono text-xs font-semibold text-orange-600 dark:text-orange-400">
+              Step 2 · Inference
+            </div>
             <div className="text-sm font-semibold text-slate-900 dark:text-white">
               Real AI Vision Model
             </div>
-            <p className="text-xs text-slate-600 dark:text-slate-300">
-              Gemini 3.1 Flash Lite Vision (with Gemini 4 Hydrogen fallback) predicts bounding boxes [ymin, xmin, ymax, xmax], class labels (Fire or Smoke), and real confidence scores.
+            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+              Gemini Vision predicts bounding boxes [ymin, xmin, ymax, xmax], class labels (Fire or Smoke), and real confidence scores.
             </p>
           </div>
 
-          <div className="p-4 rounded-lg border border-slate-200 dark:border-slate-800 space-y-1.5">
-            <div className="font-mono text-xs font-semibold text-orange-600">Step 3 · Filter</div>
+          <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 space-y-1.5">
+            <div className="font-mono text-xs font-semibold text-orange-600 dark:text-orange-400">
+              Step 3 · Filter
+            </div>
             <div className="text-sm font-semibold text-slate-900 dark:text-white">
               Strict Allowlist &amp; Threshold
             </div>
-            <p className="text-xs text-slate-600 dark:text-slate-300">
+            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
               Only &lsquo;fire&rsquo; and &lsquo;smoke&rsquo; predictions &ge; 75% confidence pass; alerts trigger only after 5 consecutive verified frames.
             </p>
           </div>
 
-          <div className="p-4 rounded-lg border border-slate-200 dark:border-slate-800 space-y-1.5">
-            <div className="font-mono text-xs font-semibold text-orange-600">Step 4 · Respond</div>
+          <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 space-y-1.5">
+            <div className="font-mono text-xs font-semibold text-orange-600 dark:text-orange-400">
+              Step 4 · Respond
+            </div>
             <div className="text-sm font-semibold text-slate-900 dark:text-white">
               Fail-Safe Alert &amp; Logging
             </div>
-            <p className="text-xs text-slate-600 dark:text-slate-300">
+            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
               Fails safely if model is unavailable; otherwise plays siren with cooldown protection, saves screenshot, and logs incident.
             </p>
           </div>
@@ -142,7 +155,7 @@ export const AboutProjectPage: React.FC = () => {
               <ShieldAlert className="w-3.5 h-3.5 text-orange-600" /> 2. Place YOLOv8 Weights
             </div>
             <code className="block font-mono text-[11px] text-slate-700 dark:text-slate-200">
-              models/fire_detection_model/best.pt (OpenCV HSV fallback runs automatically if omitted)
+              models/fire_detection_model/best.pt (lazy-loaded locally; or use GEMINI_API_KEY / EXTERNAL_AI_ENDPOINT)
             </code>
           </div>
           <div className="p-3.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 space-y-1">

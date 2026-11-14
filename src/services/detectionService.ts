@@ -9,6 +9,18 @@ import {
 export const MODEL_UNAVAILABLE_MESSAGE =
   '⚠ AI MODEL UNAVAILABLE – REAL-TIME DETECTION IS DISABLED';
 
+/**
+ * Resolves API endpoints for both same-origin deployments ('' default)
+ * and split production deployments (e.g. Vite on Vercel -> Flask backend via VITE_API_BASE_URL).
+ */
+export function buildApiUrl(path: string): string {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  const rawBase =
+    (import.meta as { env?: Record<string, string | undefined> }).env?.VITE_API_BASE_URL ?? '';
+  const baseUrl = rawBase.trim().replace(/\/+$/, '');
+  return baseUrl ? `${baseUrl}${normalizedPath}` : normalizedPath;
+}
+
 export const DEFAULT_MODEL_STATUS: AIModelStatus = {
   modelLoaded: false,
   modelEnabled: true,
@@ -84,7 +96,7 @@ async function safeParseJsonResponse<T>(resp: Response): Promise<{ data: T | nul
  */
 export async function fetchModelStatus(): Promise<AIModelStatus> {
   try {
-    const resp = await fetch('/api/health');
+    const resp = await fetch(buildApiUrl('/api/health'));
     const parsed = await safeParseJsonResponse<Partial<AIModelStatus> & { geminiConfigured?: boolean }>(resp);
     if (!resp.ok || !parsed.data) {
       return {
@@ -112,7 +124,7 @@ export async function fetchModelStatus(): Promise<AIModelStatus> {
  */
 export async function setModelEnabled(enabled: boolean): Promise<AIModelStatus> {
   try {
-    const resp = await fetch('/api/model/status', {
+    const resp = await fetch(buildApiUrl('/api/model/status'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ enabled }),
@@ -190,7 +202,7 @@ export async function detect(
 
   try {
     const { dataUrl, mimeType } = preprocessFrameToDataUrl(frame);
-    const resp = await fetch('/api/detect', {
+    const resp = await fetch(buildApiUrl('/api/detect'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       signal: options.signal,

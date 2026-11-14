@@ -8,3 +8,13 @@ coverage/
 !.env.example
 .playwright-cli/
 .aistudio/
+saved_incidents/
+database/*.json
+database/*.db
+*.pt
+*.onnx
+*.pth
+__pycache__/
+venv/
+.venv/
+.vercel

@@ -52,6 +52,7 @@ export const ImageDetectionPage: React.FC<ImageDetectionPageProps> = ({
   const [analysisResult, setAnalysisResult] = useState<DetectionResult | null>(null);
   const [savedSuccess, setSavedSuccess] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string>('');
+  const [isDragging, setIsDragging] = useState<boolean>(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -78,8 +79,7 @@ export const ImageDetectionPage: React.FC<ImageDetectionPageProps> = ({
     setSelectedLabel(title);
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const processImageFile = (file: File | undefined) => {
     if (!file) return;
     if (!/\.(jpe?g|png|webp)$/i.test(file.name) && !file.type.startsWith('image/')) {
       setErrorMsg('Please select a valid JPG, JPEG, PNG, or WEBP image file.');
@@ -98,6 +98,17 @@ export const ImageDetectionPage: React.FC<ImageDetectionPageProps> = ({
       }
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    processImageFile(e.target.files?.[0]);
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    processImageFile(e.dataTransfer.files?.[0]);
   };
 
   const handleAnalyze = async () => {
@@ -257,25 +268,25 @@ export const ImageDetectionPage: React.FC<ImageDetectionPageProps> = ({
               {modelStatus.isLoading
                 ? 'Loading...'
                 : modelStatus.modelLoaded
-                  ? '🟢 Loaded and Ready'
-                  : '🔴 Not Loaded'}{' '}
-              · Min confidence: {Math.max(75, settings.confidenceThreshold)}%.
+                  ? 'Loaded and Ready'
+                  : 'Not Loaded'}{' '}
+              · Min confidence: {Math.max(75, settings.confidenceThreshold)}%
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5 shrink-0">
             <input
               ref={fileInputRef}
               type="file"
               accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
               onChange={handleFileUpload}
               className="hidden"
-              aria-label="Upload JPG or PNG image"
+              aria-label="Upload JPG, PNG, or WEBP image"
             />
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 whitespace-nowrap"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 whitespace-nowrap"
             >
               <Upload className="w-4 h-4" />
               <span>Upload Image</span>
@@ -285,35 +296,83 @@ export const ImageDetectionPage: React.FC<ImageDetectionPageProps> = ({
               type="button"
               onClick={handleAnalyze}
               disabled={!originalUrl || isAnalyzing}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white text-xs font-semibold transition-colors whitespace-nowrap"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white text-xs font-semibold shadow-xs whitespace-nowrap"
             >
               <ScanSearch className="w-4 h-4" />
-              <span>{isAnalyzing ? 'Analyzing...' : 'Analyze Frame'}</span>
+              <span>{isAnalyzing ? 'Analyzing Frame...' : 'Analyze Frame'}</span>
             </button>
           </div>
         </div>
 
-        {/* Built-in Demo Samples */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
-          {DEMO_SCENES.map((scene) => (
+        {/* Drag-and-Drop Upload Zone */}
+        <div
+          onDragOver={(e) => {
+            e.preventDefault();
+            setIsDragging(true);
+          }}
+          onDragLeave={() => setIsDragging(false)}
+          onDrop={handleDrop}
+          className={`rounded-xl border-2 border-dashed p-5 text-center transition-colors ${
+            isDragging
+              ? 'border-orange-500 bg-orange-50/70 dark:bg-orange-950/30'
+              : 'border-slate-200 dark:border-slate-700/80 bg-slate-50/60 dark:bg-slate-950/40 hover:border-orange-400/70'
+          }`}
+        >
+          <Upload className="w-6 h-6 text-orange-600 dark:text-orange-400 mx-auto mb-2" />
+          <div className="text-xs font-semibold text-slate-900 dark:text-white">
+            Drag and drop an image frame here, or{' '}
             <button
-              key={scene.id}
               type="button"
-              onClick={() => loadSampleImage(scene.id, scene.title)}
-              className={`p-3 rounded-lg border text-left transition-colors ${
-                selectedLabel === scene.title
-                  ? 'border-orange-500 bg-orange-50/50 dark:bg-orange-950/30'
-                  : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50'
-              }`}
+              onClick={() => fileInputRef.current?.click()}
+              className="text-orange-600 dark:text-orange-400 hover:underline font-semibold"
             >
-              <div className="text-xs font-semibold text-slate-900 dark:text-white">
-                {scene.title}
-              </div>
-              <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                {scene.subtitle}
-              </div>
+              browse files
             </button>
-          ))}
+          </div>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+            Supported formats: JPG, JPEG, PNG, WEBP · Strict Fire &amp; Smoke localization
+          </p>
+        </div>
+
+        {/* Analysis Progress Indicator */}
+        {isAnalyzing && (
+          <div className="space-y-1.5" role="status" aria-live="polite">
+            <div className="flex items-center justify-between text-xs font-medium text-orange-700 dark:text-orange-300">
+              <span>Running AI vision model inference...</span>
+              <span className="font-mono">Processing</span>
+            </div>
+            <div className="h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+              <div className="h-full w-2/3 bg-orange-600 rounded-full animate-pulse" />
+            </div>
+          </div>
+        )}
+
+        {/* Built-in Demo Samples */}
+        <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+            Quick Test Sample Scenes
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {DEMO_SCENES.map((scene) => (
+              <button
+                key={scene.id}
+                type="button"
+                onClick={() => loadSampleImage(scene.id, scene.title)}
+                className={`p-3 rounded-lg border text-left transition-all ${
+                  selectedLabel === scene.title
+                    ? 'border-orange-500 bg-orange-50/60 dark:bg-orange-950/30 shadow-xs'
+                    : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                }`}
+              >
+                <div className="text-xs font-semibold text-slate-900 dark:text-white">
+                  {scene.title}
+                </div>
+                <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                  {scene.subtitle}
+                </div>
+              </button>
+            ))}
+          </div>
         </div>
 
         {errorMsg && (
@@ -327,7 +386,7 @@ export const ImageDetectionPage: React.FC<ImageDetectionPageProps> = ({
       {originalUrl ? (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2">
               <h3 className="font-display font-semibold text-sm text-slate-900 dark:text-white">
                 Original Image
               </h3>
@@ -335,7 +394,7 @@ export const ImageDetectionPage: React.FC<ImageDetectionPageProps> = ({
                 {selectedLabel}
               </span>
             </div>
-            <div className="aspect-[4/3] rounded-lg overflow-hidden bg-slate-950 flex items-center justify-center">
+            <div className="aspect-[4/3] rounded-lg overflow-hidden bg-slate-950 flex items-center justify-center border border-slate-800">
               <img
                 src={originalUrl}
                 alt="Original input frame"
@@ -345,7 +404,7 @@ export const ImageDetectionPage: React.FC<ImageDetectionPageProps> = ({
           </div>
 
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2">
               <h3 className="font-display font-semibold text-sm text-slate-900 dark:text-white">
                 AI Detection Result
               </h3>
@@ -355,7 +414,7 @@ export const ImageDetectionPage: React.FC<ImageDetectionPageProps> = ({
                 </span>
               )}
             </div>
-            <div className="aspect-[4/3] rounded-lg overflow-hidden bg-slate-950 flex items-center justify-center">
+            <div className="aspect-[4/3] rounded-lg overflow-hidden bg-slate-950 flex items-center justify-center border border-slate-800">
               {annotatedUrl ? (
                 <img
                   src={annotatedUrl}
@@ -365,20 +424,22 @@ export const ImageDetectionPage: React.FC<ImageDetectionPageProps> = ({
                 />
               ) : (
                 <div className="text-xs text-slate-400 px-6 text-center">
-                  Click &ldquo;Analyze Frame&rdquo; to run real AI Fire and Smoke detection.
+                  {isAnalyzing
+                    ? 'Analyzing frame for fire and smoke regions...'
+                    : 'Click “Analyze Frame” to run real AI Fire and Smoke detection.'}
                 </div>
               )}
             </div>
           </div>
         </div>
       ) : (
-        <div className="bg-white dark:bg-slate-900 border border-dashed border-slate-300 dark:border-slate-700 rounded-xl p-12 text-center">
-          <Upload className="w-8 h-8 text-slate-400 mx-auto mb-3" />
-          <div className="text-sm font-medium text-slate-900 dark:text-white">
-            No image selected
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-10 text-center">
+          <ScanSearch className="w-8 h-8 text-slate-400 mx-auto mb-2.5" />
+          <div className="text-sm font-semibold text-slate-900 dark:text-white">
+            Ready for Image Analysis
           </div>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Upload a JPG/PNG image or click one of the 3 sample scenes above to begin.
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-md mx-auto">
+            Drop an image above or select one of the three sample scenes, then click Analyze Frame to view annotated bounding boxes.
           </p>
         </div>
       )}

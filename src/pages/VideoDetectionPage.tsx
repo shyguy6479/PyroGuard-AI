@@ -84,6 +84,7 @@ export const VideoDetectionPage: React.FC<VideoDetectionPageProps> = ({
   const [events, setEvents] = useState<VideoTimelineEvent[]>([]);
   const [loggedForClip, setLoggedForClip] = useState<boolean>(false);
   const [videoError, setVideoError] = useState<string>('');
+  const [isDragging, setIsDragging] = useState<boolean>(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -129,9 +130,12 @@ export const VideoDetectionPage: React.FC<VideoDetectionPageProps> = ({
     onStatusChange('normal', 0, 'Video Stream', false);
   };
 
-  const handleUploadVideo = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const loadVideoFile = (file: File | undefined) => {
     if (!file) return;
+    if (!/\.(mp4|webm|mov|m4v)$/i.test(file.name) && !file.type.startsWith('video/')) {
+      setVideoError('Please select a valid MP4, WEBM, or MOV video file.');
+      return;
+    }
     if (videoSrc && videoSrc.startsWith('blob:')) {
       URL.revokeObjectURL(videoSrc);
     }
@@ -141,6 +145,17 @@ export const VideoDetectionPage: React.FC<VideoDetectionPageProps> = ({
     setVideoName(file.name);
     setIsPlaying(false);
     resetMetrics();
+  };
+
+  const handleUploadVideo = (e: React.ChangeEvent<HTMLInputElement>) => {
+    loadVideoFile(e.target.files?.[0]);
+  };
+
+  const handleVideoDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    loadVideoFile(e.dataTransfer.files?.[0]);
   };
 
   const handleLoadDemoClip = async () => {
@@ -474,77 +489,112 @@ export const VideoDetectionPage: React.FC<VideoDetectionPageProps> = ({
         </div>
       )}
 
-      {/* Video Source Toolbar */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h2 className="font-display font-semibold text-base text-slate-900 dark:text-white">
-            Video Frame-by-Frame AI Analyzer
-          </h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Active file:{' '}
-            <span className="font-medium text-slate-700 dark:text-slate-200">{videoName}</span> ·
-            Model: {modelStatus.modelName} ({modelStatus.modelVersion})
-          </p>
+      {/* Video Source Toolbar & Dropzone */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h2 className="font-display font-semibold text-base text-slate-900 dark:text-white">
+              Video Frame-by-Frame AI Analyzer
+            </h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              Active clip:{' '}
+              <span className="font-medium text-slate-700 dark:text-slate-200">{videoName}</span> ·
+              Model: {modelStatus.modelName} ({modelStatus.modelVersion})
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="video/mp4,video/webm,video/quicktime,video/*"
+              onChange={handleUploadVideo}
+              className="hidden"
+              aria-label="Upload video file"
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 whitespace-nowrap"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <span>Upload Video</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleLoadDemoClip}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 whitespace-nowrap"
+            >
+              <Film className="w-3.5 h-3.5" />
+              <span>Run Sample Fire Clip</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handlePlayToggle}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-orange-600 hover:bg-orange-700 text-white text-xs font-semibold shadow-xs whitespace-nowrap"
+            >
+              {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+              <span>{isPlaying ? 'Pause' : 'Process Video'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setIsPlaying(false);
+                if (videoRef.current) {
+                  videoRef.current.pause();
+                  videoRef.current.currentTime = 0;
+                }
+                resetMetrics();
+              }}
+              className="p-2 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+              aria-label="Reset video analysis"
+              title="Reset video analysis"
+            >
+              <RotateCcw className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="video/mp4,video/webm,video/quicktime,video/*"
-            onChange={handleUploadVideo}
-            className="hidden"
-            aria-label="Upload video file"
-          />
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 whitespace-nowrap"
-          >
-            <Upload className="w-3.5 h-3.5" />
-            <span>Upload Video</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={handleLoadDemoClip}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 whitespace-nowrap"
-          >
-            <Film className="w-3.5 h-3.5" />
-            <span>Run Sample Fire Clip</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={handlePlayToggle}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-orange-600 hover:bg-orange-700 text-white text-xs font-semibold transition-colors whitespace-nowrap"
-          >
-            {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-            <span>{isPlaying ? 'Pause' : 'Process Video'}</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setIsPlaying(false);
-              if (videoRef.current) {
-                videoRef.current.pause();
-                videoRef.current.currentTime = 0;
-              }
-              resetMetrics();
-            }}
-            className="p-2 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
-            aria-label="Reset video analysis"
-          >
-            <RotateCcw className="w-4 h-4" />
-          </button>
+        {/* Drag-and-Drop Video Zone */}
+        <div
+          onDragOver={(e) => {
+            e.preventDefault();
+            setIsDragging(true);
+          }}
+          onDragLeave={() => setIsDragging(false)}
+          onDrop={handleVideoDrop}
+          className={`rounded-xl border-2 border-dashed p-4 text-center transition-colors ${
+            isDragging
+              ? 'border-orange-500 bg-orange-50/70 dark:bg-orange-950/30'
+              : 'border-slate-200 dark:border-slate-700/80 bg-slate-50/60 dark:bg-slate-950/40 hover:border-orange-400/70'
+          }`}
+        >
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-2 text-xs">
+            <Upload className="w-4 h-4 text-orange-600 dark:text-orange-400 shrink-0" />
+            <span className="font-medium text-slate-800 dark:text-slate-200">
+              Drag &amp; drop recorded video here or{' '}
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="text-orange-600 dark:text-orange-400 hover:underline font-semibold"
+              >
+                select file
+              </button>
+            </span>
+            <span className="text-slate-500 dark:text-slate-400">
+              · Supported: MP4, WEBM, MOV
+            </span>
+          </div>
         </div>
       </div>
 
       {/* Main Processed Canvas + Timeline Events */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div className="lg:col-span-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 space-y-3">
-          <div className="aspect-[4/3] bg-slate-950 rounded-lg overflow-hidden">
+          <div className="aspect-[4/3] bg-slate-950 rounded-lg overflow-hidden border border-slate-800">
             {mode === 'uploaded' && videoSrc && (
               <video ref={videoRef} src={videoSrc} className="hidden" muted playsInline />
             )}
@@ -586,42 +636,59 @@ export const VideoDetectionPage: React.FC<VideoDetectionPageProps> = ({
                   </span>
                 ) : verifiedStatus === 'fire_emergency' ? (
                   <span className="text-red-600 dark:text-red-400 inline-flex items-center gap-1">
-                    <Flame className="w-3.5 h-3.5" /> 🔥 FIRE DETECTED
+                    <Flame className="w-3.5 h-3.5" /> FIRE DETECTED
                   </span>
                 ) : verifiedStatus === 'smoke_warning' ? (
                   <span className="text-amber-600 dark:text-amber-400 inline-flex items-center gap-1">
-                    <Wind className="w-3.5 h-3.5" /> 💨 SMOKE DETECTED
+                    <Wind className="w-3.5 h-3.5" /> SMOKE DETECTED
                   </span>
                 ) : (
                   <span className="text-emerald-600 dark:text-emerald-400 inline-flex items-center gap-1">
-                    <ShieldCheck className="w-3.5 h-3.5" /> 🟢 SYSTEM SAFE
+                    <ShieldCheck className="w-3.5 h-3.5" /> SYSTEM SAFE
                   </span>
                 )}
               </span>
             </div>
 
-            <div className="flex items-center justify-between py-1 text-xs">
-              <span className="text-slate-500 dark:text-slate-400">Consecutive Frames</span>
-              <span
-                data-testid="video-consecutive-frames"
-                className="font-mono font-semibold tabular-nums text-slate-900 dark:text-white"
-              >
-                {Math.min(
-                  consecutiveFrames,
-                  Math.max(MIN_CONSECUTIVE_FRAMES, settings.persistenceFrames)
-                )}{' '}
-                / {Math.max(MIN_CONSECUTIVE_FRAMES, settings.persistenceFrames)} frames
-              </span>
+            <div className="space-y-1.5 py-1 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 dark:text-slate-400">Consecutive Frames</span>
+                <span
+                  data-testid="video-consecutive-frames"
+                  className="font-mono font-semibold tabular-nums text-slate-900 dark:text-white"
+                >
+                  {Math.min(
+                    consecutiveFrames,
+                    Math.max(MIN_CONSECUTIVE_FRAMES, settings.persistenceFrames)
+                  )}{' '}
+                  / {Math.max(MIN_CONSECUTIVE_FRAMES, settings.persistenceFrames)} frames
+                </span>
+              </div>
+              <div className="h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                <div
+                  style={{
+                    width: `${Math.round(
+                      (Math.min(
+                        consecutiveFrames,
+                        Math.max(MIN_CONSECUTIVE_FRAMES, settings.persistenceFrames)
+                      ) /
+                        Math.max(MIN_CONSECUTIVE_FRAMES, settings.persistenceFrames)) *
+                        100
+                    )}%`,
+                  }}
+                  className="h-full bg-orange-600 rounded-full transition-all duration-200"
+                />
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3 text-sm pt-1">
-              <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/60">
+              <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/70 dark:border-slate-800">
                 <div className="text-xs text-slate-500 dark:text-slate-400">Fire Frames</div>
                 <div className="mt-1 font-mono text-xl font-bold text-red-600 dark:text-red-400 tabular-nums">
                   {fireFrames}
                 </div>
               </div>
-              <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/60">
+              <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/70 dark:border-slate-800">
                 <div className="text-xs text-slate-500 dark:text-slate-400">Smoke Frames</div>
                 <div className="mt-1 font-mono text-xl font-bold text-amber-600 dark:text-amber-400 tabular-nums">
                   {smokeFrames}

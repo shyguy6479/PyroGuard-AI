@@ -61,10 +61,12 @@ interface DatabaseSchema {
   emailLogs: EmailDispatchLog[];
 }
 
+const IS_VERCEL = Boolean(process.env.VERCEL);
 const ROOT_DIR = process.cwd();
-const DB_DIR = path.join(ROOT_DIR, 'database');
+const WRITE_ROOT = IS_VERCEL ? '/tmp/pyroguard' : ROOT_DIR;
+const DB_DIR = path.join(WRITE_ROOT, 'database');
 const DB_FILE = path.join(DB_DIR, 'fire_detection.json');
-const IMAGES_DIR = path.join(ROOT_DIR, 'saved_incidents', 'detected_images');
+const IMAGES_DIR = path.join(WRITE_ROOT, 'saved_incidents', 'detected_images');
 
 fs.mkdirSync(DB_DIR, { recursive: true });
 fs.mkdirSync(IMAGES_DIR, { recursive: true });
@@ -317,6 +319,17 @@ function createInitialDatabase(): DatabaseSchema {
 
 function readDatabase(): DatabaseSchema {
   if (!fs.existsSync(DB_FILE)) {
+    const bundledDbFile = path.join(ROOT_DIR, 'database', 'fire_detection.json');
+    if (IS_VERCEL && fs.existsSync(bundledDbFile)) {
+      try {
+        const bundled = fs.readFileSync(bundledDbFile, 'utf-8');
+        fs.writeFileSync(DB_FILE, bundled, 'utf-8');
+      } catch {
+        // Fall through to initial database creation
+      }
+    }
+  }
+  if (!fs.existsSync(DB_FILE)) {
     const initial = createInitialDatabase();
     fs.writeFileSync(DB_FILE, JSON.stringify(initial, null, 2), 'utf-8');
     return initial;
@@ -370,8 +383,33 @@ function escapeCsvCell(value: string | number | boolean): string {
 }
 
 const app = express();
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ?? '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (ALLOWED_ORIGINS.length === 0) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  } else if (origin && ALLOWED_ORIGINS.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+  }
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
+  if (req.method === 'OPTIONS') {
+    res.status(204).end();
+    return;
+  }
+  next();
+});
+
 app.use(express.json({ limit: '20mb' }));
-app.use('/saved_incidents', express.static(path.join(ROOT_DIR, 'saved_incidents')));
+app.use('/saved_incidents', express.static(path.join(WRITE_ROOT, 'saved_incidents')));
+if (IS_VERCEL) {
+  app.use('/saved_incidents', express.static(path.join(ROOT_DIR, 'saved_incidents')));
+}
 
 const AI_MODEL_NAME = 'Gemini 3.1 Flash Lite Vision';
 const AI_MODEL_TYPE = 'Multimodal Vision AI';
@@ -935,4 +973,8 @@ async function startServer() {
   });
 }
 
-startServer();
+if (!IS_VERCEL) {
+  startServer();
+}
+
+export default app;

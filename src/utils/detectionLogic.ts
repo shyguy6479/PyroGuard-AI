@@ -291,6 +291,27 @@ export function filterIncidents(
   });
 }
 
+export type DateRangeFilter = '7d' | '14d' | '30d' | 'all';
+
+/**
+ * Filters incident history records to a trailing day window based on real incident timestamps.
+ */
+export function filterIncidentsByDateRange(
+  incidents: IncidentRecord[],
+  range: DateRangeFilter,
+  referenceMs: number = Date.now()
+): IncidentRecord[] {
+  if (range === 'all') {
+    return incidents;
+  }
+  const days = range === '7d' ? 7 : range === '14d' ? 14 : 30;
+  const cutoffMs = referenceMs - days * 24 * 60 * 60 * 1000;
+  return incidents.filter((item) => {
+    const ts = Date.parse(item.timestamp);
+    return Number.isFinite(ts) && ts >= cutoffMs;
+  });
+}
+
 export interface AnalyticsSummary {
   totalDetections: number;
   fireDetections: number;

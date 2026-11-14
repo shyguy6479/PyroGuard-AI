@@ -6,6 +6,7 @@ import {
   deriveSystemStatus,
   filterAllowedHazardDetections,
   filterIncidents,
+  filterIncidentsByDateRange,
   formatIncidentsCsv,
   MultiFrameAlertTracker,
   summarizeDetectionType,
@@ -136,7 +137,7 @@ test('MultiFrameAlertTracker enforces 5 consecutive verified frames, resets on c
   assert.equal(deriveSystemStatus([]), 'normal');
 });
 
-test('filterIncidents, computeAnalytics, and formatIncidentsCsv behave accurately', () => {
+test('filterIncidents, filterIncidentsByDateRange, computeAnalytics, and formatIncidentsCsv behave accurately', () => {
   const sample: IncidentRecord[] = [
     {
       id: 'INC-1001',
@@ -159,19 +160,34 @@ test('filterIncidents, computeAnalytics, and formatIncidentsCsv behave accuratel
       source: 'Image Upload',
       emailSent: false,
     },
+    {
+      id: 'INC-1003',
+      timestamp: '2026-10-01T08:00:00.000Z',
+      detectionType: 'Fire',
+      confidence: 85,
+      screenshotUrl: '/img3.png',
+      status: 'Resolved',
+      source: 'Video Stream',
+      emailSent: false,
+    },
   ];
 
   assert.equal(filterIncidents(sample, 'warehouse', 'All', 'All').length, 1);
   assert.equal(filterIncidents(sample, '', 'Smoke', 'Resolved').length, 1);
 
-  const stats = computeAnalytics(sample);
+  const refMs = Date.parse('2026-11-14T00:00:00.000Z');
+  assert.equal(filterIncidentsByDateRange(sample, '7d', refMs).length, 2);
+  assert.equal(filterIncidentsByDateRange(sample, '30d', refMs).length, 2);
+  assert.equal(filterIncidentsByDateRange(sample, 'all', refMs).length, 3);
+
+  const stats = computeAnalytics(sample.slice(0, 2));
   assert.equal(stats.totalDetections, 2);
   assert.equal(stats.fireDetections, 1);
   assert.equal(stats.smokeDetections, 1);
   assert.equal(stats.activeAlerts, 1);
   assert.equal(stats.avgConfidence, 85);
 
-  const csv = formatIncidentsCsv(sample);
+  const csv = formatIncidentsCsv(sample.slice(0, 2));
   assert.ok(csv.includes('Incident ID,Timestamp,Detection Type'));
   assert.ok(csv.includes('"Warehouse aisle 3, north pallet"'));
 });

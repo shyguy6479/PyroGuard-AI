@@ -1,7 +1,9 @@
 import React, { useMemo, useState } from 'react';
-import { Search, Download, Trash2, Mail, X } from 'lucide-react';
+import { Search, Download, Trash2, Mail, Eye } from 'lucide-react';
 import type { IncidentRecord, IncidentStatus } from '../types/detection';
 import { filterIncidents } from '../utils/detectionLogic';
+import { IncidentTypeBadge } from '../components/StatusBadge';
+import { IncidentDetailModal, IncidentThumbnail } from '../components/IncidentDetailModal';
 
 interface HistoryPageProps {
   incidents: IncidentRecord[];
@@ -79,7 +81,7 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({
         <button
           type="button"
           onClick={onDownloadCsv}
-          className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-orange-600 hover:bg-orange-700 text-white text-sm font-medium transition-colors whitespace-nowrap shrink-0"
+          className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-orange-600 hover:bg-orange-700 text-white text-sm font-semibold shadow-xs whitespace-nowrap shrink-0"
         >
           <Download className="w-4 h-4" />
           <span>Download CSV Report</span>
@@ -88,18 +90,18 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({
 
       {/* Incidents Data Table */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
-        <div className="px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+        <div className="px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
           <span>
             Showing <strong className="text-slate-900 dark:text-white">{filtered.length}</strong> of{' '}
             {incidents.length} recorded incidents
           </span>
-          <span>Click any thumbnail to inspect full screenshot</span>
+          <span>Click View Details or thumbnail to inspect full evidence</span>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse" data-testid="history-table">
             <thead>
-              <tr className="border-b border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-500 dark:text-slate-400 bg-slate-50/70 dark:bg-slate-800/40">
+              <tr className="border-b border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-500 dark:text-slate-400 bg-slate-50/70 dark:bg-slate-800/40">
                 <th className="py-3 px-4">Screenshot</th>
                 <th className="py-3 px-4">Incident ID</th>
                 <th className="py-3 px-4">Date &amp; Time</th>
@@ -120,19 +122,19 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({
                     <button
                       type="button"
                       onClick={() => setPreviewIncident(item)}
-                      className="block rounded overflow-hidden border border-slate-200 dark:border-slate-700 hover:border-orange-500 transition-colors"
+                      className="block rounded-md overflow-hidden border border-slate-200 dark:border-slate-700 hover:border-orange-500 transition-colors"
                       aria-label={`Inspect screenshot for ${item.id}`}
+                      title="Inspect full screenshot"
                     >
-                      <img
+                      <IncidentThumbnail
                         src={item.screenshotUrl}
                         alt={`Detected frame ${item.id}`}
-                        referrerPolicy="no-referrer"
                         className="w-20 h-13 object-cover bg-slate-900"
                       />
                     </button>
                   </td>
                   <td className="py-2.5 px-4">
-                    <div className="font-mono text-xs font-semibold text-slate-900 dark:text-white">
+                    <div className="font-mono text-xs font-semibold text-slate-900 dark:text-white whitespace-nowrap">
                       {item.id}
                     </div>
                     {item.emailSent && (
@@ -145,21 +147,13 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({
                   <td className="py-2.5 px-4 font-mono text-xs text-slate-600 dark:text-slate-300 whitespace-nowrap">
                     {new Date(item.timestamp).toLocaleString()}
                   </td>
-                  <td className="py-2.5 px-4 font-semibold">
-                    <span
-                      className={
-                        item.detectionType.includes('Fire')
-                          ? 'text-red-600 dark:text-red-400'
-                          : 'text-amber-600 dark:text-amber-400'
-                      }
-                    >
-                      {item.detectionType}
-                    </span>
+                  <td className="py-2.5 px-4">
+                    <IncidentTypeBadge type={item.detectionType} />
                   </td>
                   <td className="py-2.5 px-4 text-right font-mono font-semibold tabular-nums text-slate-900 dark:text-white">
                     {item.confidence}%
                   </td>
-                  <td className="py-2.5 px-4 text-xs text-slate-600 dark:text-slate-300">
+                  <td className="py-2.5 px-4 text-xs text-slate-600 dark:text-slate-300 whitespace-nowrap">
                     {item.source}
                   </td>
                   <td className="py-2.5 px-4">
@@ -179,14 +173,26 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({
                     </select>
                   </td>
                   <td className="py-2.5 px-4 text-right">
-                    <button
-                      type="button"
-                      onClick={() => onDeleteIncident(item.id)}
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/50 transition-colors"
-                      aria-label={`Delete incident ${item.id}`}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    <div className="inline-flex items-center justify-end gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setPreviewIncident(item)}
+                        className="p-1.5 rounded-lg text-slate-500 hover:text-orange-600 dark:text-slate-400 dark:hover:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-950/40 transition-colors"
+                        aria-label={`View details for ${item.id}`}
+                        title="View Details"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onDeleteIncident(item.id)}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/50 transition-colors"
+                        aria-label={`Delete incident ${item.id}`}
+                        title="Delete incident"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -194,7 +200,7 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({
                 <tr>
                   <td
                     colSpan={8}
-                    className="py-10 text-center text-sm text-slate-500 dark:text-slate-400"
+                    className="py-12 text-center text-sm text-slate-500 dark:text-slate-400"
                   >
                     No incidents match the current search or filter criteria.
                   </td>
@@ -205,50 +211,10 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({
         </div>
       </div>
 
-      {/* Screenshot Inspection Modal */}
-      {previewIncident && (
-        <div
-          className="fixed inset-0 z-50 bg-slate-950/75 flex items-center justify-center p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-label={`Incident ${previewIncident.id} Details`}
-        >
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl max-w-2xl w-full overflow-hidden">
-            <div className="px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-              <div>
-                <h3 className="font-display font-semibold text-base text-slate-900 dark:text-white">
-                  {previewIncident.id} · {previewIncident.detectionType} ({previewIncident.confidence}%)
-                </h3>
-                <p className="text-xs font-mono text-slate-500 dark:text-slate-400">
-                  {new Date(previewIncident.timestamp).toLocaleString()} · {previewIncident.source}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setPreviewIncident(null)}
-                className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
-                aria-label="Close incident preview"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-5 space-y-4">
-              <div className="aspect-[4/3] bg-slate-950 rounded-lg overflow-hidden">
-                <img
-                  src={previewIncident.screenshotUrl}
-                  alt={`Full screenshot for ${previewIncident.id}`}
-                  className="w-full h-full object-contain"
-                />
-              </div>
-              {previewIncident.notes && (
-                <p className="text-sm text-slate-600 dark:text-slate-300">
-                  {previewIncident.notes}
-                </p>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      <IncidentDetailModal
+        incident={previewIncident}
+        onClose={() => setPreviewIncident(null)}
+      />
     </div>
   );
 };
