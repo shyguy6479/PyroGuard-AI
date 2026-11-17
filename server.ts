@@ -411,11 +411,11 @@ if (IS_VERCEL) {
   app.use('/saved_incidents', express.static(path.join(ROOT_DIR, 'saved_incidents')));
 }
 
-const AI_MODEL_NAME = 'Gemini 3.1 Flash Lite Vision';
+const AI_MODEL_NAME = 'Gemini 2.5 Flash Vision';
 const AI_MODEL_TYPE = 'Multimodal Vision AI';
-const AI_MODEL_VERSION = 'gemini-3.1-flash-lite';
-const FALLBACK_AI_MODEL_NAME = 'Gemini 4 Hydrogen Vision';
-const FALLBACK_AI_MODEL_VERSION = 'gemini-4-hydrogen';
+const AI_MODEL_VERSION = 'gemini-2.5-flash';
+const FALLBACK_AI_MODEL_NAME = 'Gemini 3.1 Flash Lite Vision';
+const FALLBACK_AI_MODEL_VERSION = 'gemini-3.1-flash-lite';
 const SUPPORTED_CLASSES: DetectionClass[] = ['Fire', 'Smoke'];
 const MODEL_UNAVAILABLE_MESSAGE = '⚠ AI MODEL UNAVAILABLE – REAL-TIME DETECTION IS DISABLED';
 
@@ -717,9 +717,6 @@ async function runVisionInferenceWithModel(
       ],
     },
     config: {
-      ...(modelId === FALLBACK_AI_MODEL_VERSION
-        ? { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } }
-        : {}),
       responseMimeType: 'application/json',
       responseSchema: {
         type: Type.OBJECT,
