@@ -316,18 +316,22 @@ export const VideoDetectionPage: React.FC<VideoDetectionPageProps> = ({
           reason.includes('rate limit') ||
           reason.includes('quota') ||
           reason.includes('429') ||
+          reason.includes('504') ||
+          reason.includes('timeout') ||
+          reason.includes('timed out') ||
+          reason.includes('gateway') ||
           reason.includes('resource_exhausted');
 
         if (isTransientQuota && consecutiveErrorsRef.current < 3) {
           consecutiveErrorsRef.current += 1;
           setVideoError(
-            `AI rate limit reached. Auto-retrying frame in 3s (attempt ${consecutiveErrorsRef.current}/3)...`
+            `AI server busy/retrying frame in 2.5s (attempt ${consecutiveErrorsRef.current}/3)...`
           );
           if (mode === 'demo_clip') {
             demoStepRef.current = Math.max(0, demoStepRef.current - 1);
           }
           if (!cancelled) {
-            timeoutId = window.setTimeout(analyzeNextFrame, 3000);
+            timeoutId = window.setTimeout(analyzeNextFrame, 2500);
           }
           return;
         }

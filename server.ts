@@ -412,8 +412,10 @@ if (IS_VERCEL) {
 }
 
 const MODEL_POOL = [
-  { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash Vision' },
   { id: 'gemini-3.5-flash-lite', name: 'Gemini 3.5 Flash Lite Vision' },
+  { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash Vision' },
+  { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash Preview Vision' },
+  { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash Vision' },
   { id: 'gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash Lite Vision' },
 ];
 
@@ -714,9 +716,10 @@ async function runVisionInferenceWithModel(
   ai: GoogleGenAI,
   modelId: string,
   cleanBase64: string,
-  mimeType: string
+  mimeType: string,
+  timeoutMs = 7000
 ) {
-  return ai.models.generateContent({
+  const inferencePromise = ai.models.generateContent({
     model: modelId,
     contents: {
       parts: [
@@ -741,6 +744,7 @@ async function runVisionInferenceWithModel(
       ],
     },
     config: {
+      thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
       responseMimeType: 'application/json',
       responseSchema: {
         type: Type.OBJECT,
@@ -765,6 +769,19 @@ async function runVisionInferenceWithModel(
       },
     },
   });
+
+  let timer: NodeJS.Timeout | null = null;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(`Inference timed out after ${timeoutMs}ms on ${modelId}`));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([inferencePromise, timeoutPromise]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 // Server-side Real AI Vision Detection endpoint using Gemini Multimodal Vision AI
@@ -836,8 +853,11 @@ app.post('/api/detect', async (req, res) => {
         msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('quota');
       if (isQuotaError) {
         sawQuotaError = true;
+        const isDailyQuota = msg.includes('requests per day') || msg.includes('PerDay');
         const retryMatch = /retryDelay["']?\s*:\s*["']?(\d+)s/i.exec(msg);
-        const retrySeconds = retryMatch ? Math.min(Number(retryMatch[1]), 60) : 20;
+        const retrySeconds = retryMatch
+          ? Math.min(Number(retryMatch[1]), isDailyQuota ? 14400 : 60)
+          : 20;
         const effectiveWaitSec = Math.max(15, retrySeconds);
         modelCooldownUntil[modelId] = Date.now() + effectiveWaitSec * 1000;
         console.warn(`[AI Model Fail-Safe] ${modelId} rate-limited, switching to next pool candidate:`, msg.slice(0, 200));

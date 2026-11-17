@@ -25,9 +25,9 @@ export const DEFAULT_MODEL_STATUS: AIModelStatus = {
   modelLoaded: false,
   modelEnabled: true,
   isLoading: true,
-  modelName: 'Gemini 2.5 Flash Vision',
+  modelName: 'Gemini 3.5 Flash Lite Vision',
   modelType: 'Multimodal Vision AI',
-  modelVersion: 'gemini-2.5-flash',
+  modelVersion: 'gemini-3.5-flash-lite',
   supportedClasses: ['Fire', 'Smoke'],
   statusMessage: 'AI Model Status: Loading',
 };
@@ -74,6 +74,12 @@ async function safeParseJsonResponse<T>(resp: Response): Promise<{ data: T | nul
   if (!trimmed) {
     return { data: null, nonJsonError: `Empty response (HTTP ${resp.status}) from AI backend.` };
   }
+  if (resp.status === 504) {
+    return {
+      data: null,
+      nonJsonError: 'AI backend gateway timed out (HTTP 504). Automatically retrying frame...',
+    };
+  }
   const contentType = (resp.headers.get('content-type') || '').toLowerCase();
   if (trimmed.startsWith('<') || contentType.includes('text/html')) {
     return {
@@ -86,7 +92,7 @@ async function safeParseJsonResponse<T>(resp: Response): Promise<{ data: T | nul
   } catch {
     return {
       data: null,
-      nonJsonError: `Invalid JSON response (HTTP ${resp.status}) from AI inference backend.`,
+      nonJsonError: `Invalid response (HTTP ${resp.status}) from AI inference backend.`,
     };
   }
 }
