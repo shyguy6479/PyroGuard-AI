@@ -411,24 +411,28 @@ if (IS_VERCEL) {
   app.use('/saved_incidents', express.static(path.join(ROOT_DIR, 'saved_incidents')));
 }
 
-const AI_MODEL_NAME = 'Gemini 2.5 Flash Vision';
+const MODEL_POOL = [
+  { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash Vision' },
+  { id: 'gemini-3.5-flash-lite', name: 'Gemini 3.5 Flash Lite Vision' },
+  { id: 'gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash Lite Vision' },
+];
+
+const AI_MODEL_NAME = MODEL_POOL[0].name;
 const AI_MODEL_TYPE = 'Multimodal Vision AI';
-const AI_MODEL_VERSION = 'gemini-2.5-flash';
-const FALLBACK_AI_MODEL_NAME = 'Gemini 3.1 Flash Lite Vision';
-const FALLBACK_AI_MODEL_VERSION = 'gemini-3.1-flash-lite';
+const AI_MODEL_VERSION = MODEL_POOL[0].id;
 const SUPPORTED_CLASSES: DetectionClass[] = ['Fire', 'Smoke'];
 const MODEL_UNAVAILABLE_MESSAGE = '⚠ AI MODEL UNAVAILABLE – REAL-TIME DETECTION IS DISABLED';
 
-const modelCooldownUntil: Record<string, number> = {
-  [AI_MODEL_VERSION]: 0,
-  [FALLBACK_AI_MODEL_VERSION]: 0,
-};
+const modelCooldownUntil: Record<string, number> = Object.fromEntries(
+  MODEL_POOL.map((m) => [m.id, 0])
+);
 let activeModelVersion = AI_MODEL_VERSION;
 let modelEnabled = true;
 let lastModelError = '';
 
 function getModelDisplayName(modelId: string): string {
-  return modelId === FALLBACK_AI_MODEL_VERSION ? FALLBACK_AI_MODEL_NAME : AI_MODEL_NAME;
+  const found = MODEL_POOL.find((m) => m.id === modelId);
+  return found ? found.name : AI_MODEL_NAME;
 }
 
 function getGeminiClient(): GoogleGenAI | null {
@@ -446,15 +450,29 @@ function getGeminiClient(): GoogleGenAI | null {
 
 function getAvailableModelVersions(): string[] {
   const now = Date.now();
-  const ordered =
-    activeModelVersion === FALLBACK_AI_MODEL_VERSION
-      ? [FALLBACK_AI_MODEL_VERSION, AI_MODEL_VERSION]
-      : [AI_MODEL_VERSION, FALLBACK_AI_MODEL_VERSION];
-  return ordered.filter((m) => now >= (modelCooldownUntil[m] || 0));
+  const poolIds = MODEL_POOL.map((m) => m.id);
+  const ordered = [
+    activeModelVersion,
+    ...poolIds.filter((id) => id !== activeModelVersion),
+  ];
+  const available = ordered.filter((m) => now >= (modelCooldownUntil[m] || 0));
+  // If all models are currently cooling down, return all candidates so we still attempt inference
+  if (available.length === 0) {
+    return ordered;
+  }
+  return available;
 }
 
 function isModelLoaded(): boolean {
-  return modelEnabled && Boolean(process.env.GEMINI_API_KEY) && getAvailableModelVersions().length > 0;
+  return modelEnabled && Boolean(process.env.GEMINI_API_KEY);
+}
+
+function resetAllModelCooldowns(): void {
+  for (const m of MODEL_POOL) {
+    modelCooldownUntil[m.id] = 0;
+  }
+  lastModelError = '';
+  activeModelVersion = MODEL_POOL[0].id;
 }
 
 function getModelStatusPayload() {
@@ -464,8 +482,8 @@ function getModelStatusPayload() {
     errorReason = 'AI model has been temporarily disabled.';
   } else if (!process.env.GEMINI_API_KEY) {
     errorReason = 'Server AI model credentials are not configured.';
-  } else if (!loaded) {
-    errorReason = lastModelError || 'AI model rate limit cooldown active.';
+  } else if (lastModelError) {
+    errorReason = lastModelError;
   }
 
   return {
@@ -481,7 +499,10 @@ function getModelStatusPayload() {
 }
 
 // Health & AI Model status check
-app.get('/api/health', (_req, res) => {
+app.get('/api/health', (req, res) => {
+  if (req.query.reset === 'true' || req.query.reset === '1') {
+    resetAllModelCooldowns();
+  }
   const status = getModelStatusPayload();
   res.json({
     ok: true,
@@ -489,6 +510,12 @@ app.get('/api/health', (_req, res) => {
     geminiKeyPresent: Boolean(process.env.GEMINI_API_KEY),
     ...status,
   });
+});
+
+// Explicit cooldown reset endpoint
+app.post('/api/model/reset', (_req, res) => {
+  resetAllModelCooldowns();
+  res.json(getModelStatusPayload());
 });
 
 // Temporarily enable/disable the AI model (e.g. fail-safe testing)
@@ -500,10 +527,7 @@ app.post('/api/model/status', (req, res) => {
   }
   modelEnabled = enabled;
   if (enabled) {
-    lastModelError = '';
-    modelCooldownUntil[AI_MODEL_VERSION] = 0;
-    modelCooldownUntil[FALLBACK_AI_MODEL_VERSION] = 0;
-    activeModelVersion = AI_MODEL_VERSION;
+    resetAllModelCooldowns();
   } else {
     lastModelError = 'AI model disabled by operator.';
   }
@@ -803,6 +827,7 @@ app.post('/api/detect', async (req, res) => {
       responseText = rawText;
       usedModel = modelId;
       activeModelVersion = modelId;
+      lastModelError = '';
       break;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -815,21 +840,20 @@ app.post('/api/detect', async (req, res) => {
         const retrySeconds = retryMatch ? Math.min(Number(retryMatch[1]), 60) : 20;
         const effectiveWaitSec = Math.max(15, retrySeconds);
         modelCooldownUntil[modelId] = Date.now() + effectiveWaitSec * 1000;
-        console.warn(`[AI Model Fail-Safe] ${modelId} rate-limited:`, msg.slice(0, 260));
+        console.warn(`[AI Model Fail-Safe] ${modelId} rate-limited, switching to next pool candidate:`, msg.slice(0, 200));
         continue;
       }
-      console.warn(`[AI Model Fail-Safe] ${modelId} error:`, msg.slice(0, 260));
+      console.warn(`[AI Model Fail-Safe] ${modelId} error:`, msg.slice(0, 200));
     }
   }
 
   if (!responseText) {
     lastModelError = sawQuotaError
-      ? `AI model quota/rate limit reached (${lastErrMsg.slice(0, 140)}).`
-      : `AI model inference unavailable: ${lastErrMsg.slice(0, 140)}`;
+      ? `AI model rate limit reached. Auto-recovering in 15 seconds.`
+      : `AI model inference temporarily unavailable: ${lastErrMsg.slice(0, 120)}`;
     const status = getModelStatusPayload();
     res.status(503).json({
       ...status,
-      modelLoaded: false,
       statusMessage: MODEL_UNAVAILABLE_MESSAGE,
       errorReason: lastModelError,
       error: MODEL_UNAVAILABLE_MESSAGE,

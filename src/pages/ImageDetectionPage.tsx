@@ -20,7 +20,12 @@ import {
   MIN_CONFIDENCE_RATIO,
   summarizeDetectionType,
 } from '../utils/detectionLogic';
-import { detect, fetchModelStatus, MODEL_UNAVAILABLE_MESSAGE } from '../services/detectionService';
+import {
+  detect,
+  fetchModelStatus,
+  resetModelCooldowns,
+  MODEL_UNAVAILABLE_MESSAGE,
+} from '../services/detectionService';
 import { drawDetectionsOnCanvas } from '../utils/drawDetections';
 import { DEMO_SCENES, generateSampleSceneDataUrl, type DemoSceneId } from '../utils/sampleFrames';
 
@@ -245,7 +250,7 @@ export const ImageDetectionPage: React.FC<ImageDetectionPageProps> = ({
           <button
             type="button"
             onClick={async () => {
-              const refreshed = await fetchModelStatus();
+              const refreshed = await resetModelCooldowns();
               onModelStatusChange(refreshed);
               if (refreshed.modelLoaded) setErrorMsg('');
             }}

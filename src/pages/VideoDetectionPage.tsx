@@ -26,7 +26,12 @@ import {
   MultiFrameAlertTracker,
   summarizeDetectionType,
 } from '../utils/detectionLogic';
-import { detect, fetchModelStatus, MODEL_UNAVAILABLE_MESSAGE } from '../services/detectionService';
+import {
+  detect,
+  fetchModelStatus,
+  resetModelCooldowns,
+  MODEL_UNAVAILABLE_MESSAGE,
+} from '../services/detectionService';
 import { drawDetectionsOnCanvas } from '../utils/drawDetections';
 import { renderSimulatedSceneFrame, type DemoSceneId } from '../utils/sampleFrames';
 
@@ -96,6 +101,7 @@ export const VideoDetectionPage: React.FC<VideoDetectionPageProps> = ({
   const consecutiveCountRef = useRef<number>(0);
   const activeHazardClassRef = useRef<'fire' | 'smoke' | null>(null);
   const trackerRef = useRef<MultiFrameAlertTracker>(new MultiFrameAlertTracker());
+  const consecutiveErrorsRef = useRef<number>(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -117,6 +123,7 @@ export const VideoDetectionPage: React.FC<VideoDetectionPageProps> = ({
     latestBoxesRef.current = [];
     consecutiveCountRef.current = 0;
     activeHazardClassRef.current = null;
+    consecutiveErrorsRef.current = 0;
     trackerRef.current.reset();
     setLoggedForClip(false);
     setProgressPct(0);
@@ -304,6 +311,27 @@ export const VideoDetectionPage: React.FC<VideoDetectionPageProps> = ({
 
       if (!aiResult.modelStatus.modelLoaded || aiResult.error) {
         onModelStatusChange(aiResult.modelStatus);
+        const reason = (aiResult.modelStatus.errorReason || aiResult.error || '').toLowerCase();
+        const isTransientQuota =
+          reason.includes('rate limit') ||
+          reason.includes('quota') ||
+          reason.includes('429') ||
+          reason.includes('resource_exhausted');
+
+        if (isTransientQuota && consecutiveErrorsRef.current < 3) {
+          consecutiveErrorsRef.current += 1;
+          setVideoError(
+            `AI rate limit reached. Auto-retrying frame in 3s (attempt ${consecutiveErrorsRef.current}/3)...`
+          );
+          if (mode === 'demo_clip') {
+            demoStepRef.current = Math.max(0, demoStepRef.current - 1);
+          }
+          if (!cancelled) {
+            timeoutId = window.setTimeout(analyzeNextFrame, 3000);
+          }
+          return;
+        }
+
         setIsPlaying(false);
         setVideoError(aiResult.modelStatus.errorReason || MODEL_UNAVAILABLE_MESSAGE);
         latestBoxesRef.current = [];
@@ -315,6 +343,9 @@ export const VideoDetectionPage: React.FC<VideoDetectionPageProps> = ({
         onStatusChange('normal', 0, 'Video Stream', false);
         return;
       }
+
+      consecutiveErrorsRef.current = 0;
+      setVideoError('');
 
       if (aiResult.modelStatus.modelVersion !== modelStatus.modelVersion) {
         onModelStatusChange(aiResult.modelStatus);
@@ -401,7 +432,7 @@ export const VideoDetectionPage: React.FC<VideoDetectionPageProps> = ({
       }
 
       if (!cancelled) {
-        timeoutId = window.setTimeout(analyzeNextFrame, mode === 'demo_clip' ? 800 : 1200);
+        timeoutId = window.setTimeout(analyzeNextFrame, mode === 'demo_clip' ? 2200 : 2500);
       }
     };
 
@@ -473,11 +504,11 @@ export const VideoDetectionPage: React.FC<VideoDetectionPageProps> = ({
               )}
             </div>
           </div>
-          {!modelStatus.modelLoaded && (
+          {(!modelStatus.modelLoaded || videoError) && (
             <button
               type="button"
               onClick={async () => {
-                const refreshed = await fetchModelStatus();
+                const refreshed = await resetModelCooldowns();
                 onModelStatusChange(refreshed);
                 if (refreshed.modelLoaded) setVideoError('');
               }}

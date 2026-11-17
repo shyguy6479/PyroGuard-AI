@@ -37,6 +37,7 @@ import {
 import {
   detect,
   fetchModelStatus,
+  resetModelCooldowns,
   MODEL_UNAVAILABLE_MESSAGE,
   setModelEnabled,
 } from '../services/detectionService';
@@ -360,6 +361,9 @@ export const LiveDetectionPage: React.FC<LiveDetectionPageProps> = ({
       if (!aiResult.modelStatus.modelLoaded || aiResult.error) {
         onModelStatusChange(aiResult.modelStatus);
         resetDetectionState('AI Model Unavailable');
+        if (!cancelled) {
+          timeoutId = window.setTimeout(runNextInference, 3500);
+        }
         return;
       }
 
@@ -719,7 +723,7 @@ export const LiveDetectionPage: React.FC<LiveDetectionPageProps> = ({
             <button
               type="button"
               onClick={async () => {
-                const refreshed = await fetchModelStatus();
+                const refreshed = await resetModelCooldowns();
                 onModelStatusChange(refreshed);
               }}
               className="px-3.5 py-1.5 rounded-lg bg-red-700 hover:bg-red-800 text-white text-xs font-semibold whitespace-nowrap shrink-0"

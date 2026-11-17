@@ -25,9 +25,9 @@ export const DEFAULT_MODEL_STATUS: AIModelStatus = {
   modelLoaded: false,
   modelEnabled: true,
   isLoading: true,
-  modelName: 'Gemini 3.1 Flash Lite Vision',
+  modelName: 'Gemini 2.5 Flash Vision',
   modelType: 'Multimodal Vision AI',
-  modelVersion: 'gemini-3.1-flash-lite',
+  modelVersion: 'gemini-2.5-flash',
   supportedClasses: ['Fire', 'Smoke'],
   statusMessage: 'AI Model Status: Loading',
 };
@@ -116,6 +116,25 @@ export async function fetchModelStatus(): Promise<AIModelStatus> {
       statusMessage: MODEL_UNAVAILABLE_MESSAGE,
       errorReason: 'Unable to connect to AI inference backend.',
     };
+  }
+}
+
+/**
+ * Resets any active rate limit cooldowns and requests immediate AI model readiness check.
+ */
+export async function resetModelCooldowns(): Promise<AIModelStatus> {
+  try {
+    const resp = await fetch(buildApiUrl('/api/model/reset'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const parsed = await safeParseJsonResponse<Partial<AIModelStatus>>(resp);
+    if (!resp.ok || !parsed.data) {
+      return fetchModelStatus();
+    }
+    return normalizeModelStatus(parsed.data);
+  } catch {
+    return fetchModelStatus();
   }
 }
 
